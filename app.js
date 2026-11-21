@@ -41,8 +41,12 @@ state.template = TEMPLATE_REN;
  * viven en vendor/ y se resuelven desde la URL de este script. */
 const APP_BASE = new URL('.', import.meta.url).href;
 const FFMPEG_ESM = new URL('vendor/ffmpeg/index.js', APP_BASE).href;
-const CORE_URL = new URL('vendor/core/ffmpeg-core.js', APP_BASE).href;
-const WASM_URL = new URL('vendor/core/ffmpeg-core.wasm', APP_BASE).href;
+/* El núcleo y el .wasm se quedan en el CDN: se cargan con fetch/import
+ * (que sí admiten otro origen con CORS). Lo único que el navegador exige
+ * en el mismo origen es el Worker, y ese ya vive en vendor/ffmpeg/.
+ * El .wasm pesa 32 MB y GitHub no permite subirlo por la web (límite 25 MB). */
+const CORE_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js';
+const WASM_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm';
 const TITAN_URL = 'https://github.com/google/fonts/raw/main/ofl/titanone/TitanOne-Regular.ttf';
 const LATO_URL = 'https://github.com/google/fonts/raw/main/ofl/lato/Lato-Bold.ttf';
 const TRANSFORMERS_URL = 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js';
