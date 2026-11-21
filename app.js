@@ -36,9 +36,13 @@ const TEMPLATE_REN = {
 state.template = TEMPLATE_REN;
 
 /* ---------------- constantes ---------------- */
-const FFMPEG_ESM = 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/+esm';
-const CORE_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js';
-const WASM_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm';
+/* Motor de video en local (mismo origen): el Worker de ffmpeg no se puede
+ * cargar desde otro dominio (CDN) en GitHub Pages, por eso los archivos
+ * viven en vendor/ y se resuelven desde la URL de este script. */
+const APP_BASE = new URL('.', import.meta.url).href;
+const FFMPEG_ESM = new URL('vendor/ffmpeg/index.js', APP_BASE).href;
+const CORE_URL = new URL('vendor/core/ffmpeg-core.js', APP_BASE).href;
+const WASM_URL = new URL('vendor/core/ffmpeg-core.wasm', APP_BASE).href;
 const TITAN_URL = 'https://github.com/google/fonts/raw/main/ofl/titanone/TitanOne-Regular.ttf';
 const LATO_URL = 'https://github.com/google/fonts/raw/main/ofl/lato/Lato-Bold.ttf';
 const TRANSFORMERS_URL = 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js';
@@ -819,6 +823,8 @@ ui.videoInput.addEventListener('change', async (ev) => {
     ui.preview.style.display = 'block';
     ui.btnVideo.classList.add('sel');
     ui.btnVideo.textContent = '📹 Cambiar video';
+    /* Bajar al paso 2 para que los efectos queden a la vista. */
+    document.getElementById('panel-efecto').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
     ui.videoInfo.textContent = e.message;
     state.mainFile = null;

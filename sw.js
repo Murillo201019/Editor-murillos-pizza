@@ -1,9 +1,10 @@
 /* Editor Murillo's — service worker.
- * Guarda solo la cáscara de la app (HTML, JS, manifiesto, iconos) para
- * que abra sin conexión. El motor de video y los modelos (CDN) NO se
- * guardan aquí: el navegador los guarda solo, como siempre.
+ * Guarda la cáscara de la app (HTML, JS, manifiesto, iconos y el motor
+ * ffmpeg salvo el .wasm) para que abra sin conexión. El .wasm (32 MB) y
+ * el modelo de voz (CDN) NO se guardan aquí: el navegador los guarda
+ * solo, como siempre.
  */
-const CACHE = 'editor-murillos-v1';
+const CACHE = 'editor-murillos-v2';
 const SHELL = [
   './',
   './index.html',
@@ -11,6 +12,14 @@ const SHELL = [
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png',
+  './vendor/ffmpeg/index.js',
+  './vendor/ffmpeg/classes.js',
+  './vendor/ffmpeg/const.js',
+  './vendor/ffmpeg/errors.js',
+  './vendor/ffmpeg/types.js',
+  './vendor/ffmpeg/utils.js',
+  './vendor/ffmpeg/worker.js',
+  './vendor/core/ffmpeg-core.js',
 ];
 
 self.addEventListener('install', (event) => {
