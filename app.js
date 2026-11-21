@@ -78,6 +78,7 @@ const ui = {
   btnExportar: $('btn-exportar'), progreso: $('progreso'), relleno2: $('relleno2'),
   estado: $('estado'), resultado: $('resultado'), outVideo: $('out-video'),
   outLink: $('out-link'), btnCompartir: $('btn-compartir'), btnOtro: $('btn-otro'),
+  registro: $('registro'), logTexto: $('log-texto'),
 };
 
 /* ---------------- motor ffmpeg ---------------- */
@@ -94,6 +95,26 @@ function setStep(name) {
 function paintProgress(p) {
   const overall = Math.min(1, (stepIdx - 1 + p) / stepTotal);
   ui.relleno2.style.width = Math.round(overall * 100) + '%';
+}
+
+/* Ejecuta un comando ffmpeg y falla con el mensaje real si el comando
+ * no termina bien. (ffmpeg.exec solo devuelve el código de salida; sin
+ * esta comprobación un fallo quedaba en silencio y el video salía vacío.) */
+async function runFFmpeg(args) {
+  const ret = await ffmpeg.exec(args);
+  if (typeof ret === 'number' && ret !== 0) {
+    const tail = logLines.slice(-6).join(' | ');
+    throw new Error('El motor de video terminó con código ' + ret + (tail ? ' — ' + tail : ''));
+  }
+  return ret;
+}
+
+/* Muestra el registro técnico (stderr de ffmpeg) en la página. */
+function showLog() {
+  if (!ui.registro || !ui.logTexto) return;
+  ui.logTexto.textContent = logLines.join('\n') || '(sin registro)';
+  ui.registro.style.display = 'block';
+  ui.registro.open = true;
 }
 
 async function ensureFFmpeg() {
@@ -320,7 +341,7 @@ async function transcribeWords(pcm16k) {
 }
 
 async function extractAudioWav(inputName, wavName) {
-  await ffmpeg.exec(['-i', inputName, '-vn', '-ac', '1', '-ar', '16000', '-f', 'wav', wavName]);
+  await runFFmpeg(['-i', inputName, '-vn', '-ac', '1', '-ar', '16000', '-f', 'wav', wavName]);
   const data = await ffmpeg.readFile(wavName);
   return parseWav16(data);
 }
@@ -365,14 +386,14 @@ async function cutSilences(input, output, segs, hasAudio) {
     ? `${labels.join('')}concat=n=${n}:v=1:a=1[vout][aout]`
     : `${labels.join('')}concat=n=${n}:v=1:a=0[vout]`);
   const maps = hasAudio ? ['-map', '[vout]', '-map', '[aout]'] : ['-map', '[vout]'];
-  await ffmpeg.exec(['-i', input, '-filter_complex', parts.join(';'), ...maps,
+  await runFFmpeg(['-i', input, '-filter_complex', parts.join(';'), ...maps,
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
     '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', output]);
 }
 
 /* ---------------- normalizar a 9:16 ---------------- */
 async function normalize(input, output) {
-  await ffmpeg.exec(['-i', input,
+  await runFFmpeg(['-i', input,
     '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30,format=yuv420p',
     '-r', '30', '-map', '0:v', '-map', '0:a?',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
@@ -414,7 +435,7 @@ async function applyBubble(input, output, lines) {
   const foot = bubblePasses([WHATSAPP], 1480, 46, 'f');
   const footFilters = await writeTextFiles(foot);
   const vf = [...filters, ...footFilters].join(',');
-  await ffmpeg.exec(['-i', input, '-vf', vf, '-map', '0:v', '-map', '0:a?',
+  await runFFmpeg(['-i', input, '-vf', vf, '-map', '0:v', '-map', '0:a?',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
     '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', output]);
 }
@@ -440,7 +461,7 @@ async function applyLyric(input, output, lines, duration) {
     parts.push(`drawtext=fontfile=${font}:textfile=${file}:fontsize=${fontSize}:fontcolor=#FFCC00:borderw=0:x=(w-text_w)/2:y=${y}:${en}`);
   });
   const filters = await writeTextFiles(parts);
-  await ffmpeg.exec(['-i', input, '-vf', filters.join(','), '-map', '0:v', '-map', '0:a?',
+  await runFFmpeg(['-i', input, '-vf', filters.join(','), '-map', '0:v', '-map', '0:a?',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
     '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', 'parteA.mp4']);
 
@@ -450,12 +471,12 @@ async function applyLyric(input, output, lines, duration) {
   const wa = bubblePasses([WHATSAPP], 1920 - 300, 46, 'w');
   const waFilters = await writeTextFiles(wa);
   const zoomVf = `zoompan=z='min(1+1.2*pow(on/90\\,3)\\,2.2)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=90:s=1080x1920:fps=30,setsar=1,${waFilters.join(',')}`;
-  await ffmpeg.exec(['-i', 'zoom.png', '-f', 'lavfi', '-t', '3', '-i', 'anullsrc=r=44100:cl=stereo',
+  await runFFmpeg(['-i', 'zoom.png', '-f', 'lavfi', '-t', '3', '-i', 'anullsrc=r=44100:cl=stereo',
     '-filter_complex', `[0:v]${zoomVf}[v]`, '-map', '[v]', '-map', '1:a',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
     '-c:a', 'aac', '-b:a', '128k', '-t', '3', '-movflags', '+faststart', 'zoom.mp4']);
 
-  await ffmpeg.exec(['-i', 'parteA.mp4', '-i', 'zoom.mp4', '-filter_complex',
+  await runFFmpeg(['-i', 'parteA.mp4', '-i', 'zoom.mp4', '-filter_complex',
     '[0:v]fps=30,format=yuv420p,setsar=1[v0];[0:a]aresample=44100,aformat=channel_layouts=stereo[a0];[1:v]fps=30,format=yuv420p,setsar=1[v1];[1:a]aresample=44100,aformat=channel_layouts=stereo[a1];[v0][a0][v1][a1]concat=n=2:v=1:a=1[vout][aout]',
     '-map', '[vout]', '-map', '[aout]',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
@@ -474,14 +495,14 @@ async function applyBackNForth(input, output, duration) {
     labels.push(`[v${i}]`);
   }
   parts.push(`${labels.join('')}concat=n=${n}:v=1:a=0[vout]`);
-  await ffmpeg.exec(['-i', input, '-filter_complex', parts.join(';'), '-map', '[vout]', '-an',
+  await runFFmpeg(['-i', input, '-filter_complex', parts.join(';'), '-map', '[vout]', '-an',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
     '-movflags', '+faststart', output]);
 }
 
 /* Tono cine: sombras frías, luces cálidas. */
 async function applyCine(input, output) {
-  await ffmpeg.exec(['-i', input,
+  await runFFmpeg(['-i', input,
     '-vf', 'eq=saturation=1.3:contrast=1.06,colorbalance=rs=-0.08:gs=0.0:bs=0.08:rh=0.10:gh=0.02:bh=-0.08',
     '-map', '0:v', '-map', '0:a?',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
@@ -517,11 +538,11 @@ async function finalRender(input, output, opts) {
       '-c:a', 'aac', '-b:a', '128k', '-r', '30', '-movflags', '+faststart', output];
   };
   try {
-    await ffmpeg.exec(buildArgs(true));
+    await runFFmpeg(buildArgs(true));
   } catch (e) {
     if (assFile && subLines) {
       ui.estado.textContent = 'Los subtítulos normales no funcionaron en este teléfono, probando de otra forma…';
-      await ffmpeg.exec(buildArgs(false));
+      await runFFmpeg(buildArgs(false));
     } else throw e;
   }
 }
@@ -562,7 +583,7 @@ async function exportEfecto() {
   if (silenceOn && hasAudio) {
     setStep('Quitando los silencios…');
     logLines = [];
-    await ffmpeg.exec(['-i', cur, '-af', `silencedetect=noise=${SILENCE_NOISE_DB}dB:d=${SILENCE_MIN_LEN}`, '-f', 'null', '-']);
+    await runFFmpeg(['-i', cur, '-af', `silencedetect=noise=${SILENCE_NOISE_DB}dB:d=${SILENCE_MIN_LEN}`, '-f', 'null', '-']);
     const sils = findSilencesFromLogs();
     const segs = keepSegments(state.workDuration, sils);
     if (sils.length && segs.length > 1) {
@@ -624,7 +645,7 @@ async function exportEfecto() {
 /* ---------------- exportar: modo plantilla ---------------- */
 async function processSlotVideo(file, name, out, dur) {
   await ffmpeg.writeFile(name, new Uint8Array(await file.arrayBuffer()));
-  await ffmpeg.exec(['-stream_loop', '-1', '-t', String(dur), '-i', name,
+  await runFFmpeg(['-stream_loop', '-1', '-t', String(dur), '-i', name,
     '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30,format=yuv420p',
     '-r', '30', '-map', '0:v',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
@@ -639,7 +660,7 @@ async function processSlotVideo(file, name, out, dur) {
   }
   parts.push(`${labels.join('')}concat=n=${n}:v=1:a=0[vcat]`);
   parts.push('[vcat]eq=saturation=1.3:contrast=1.06,colorbalance=rs=-0.08:gs=0.0:bs=0.08:rh=0.10:gh=0.02:bh=-0.08[vout]');
-  await ffmpeg.exec(['-i', name + '.norm.mp4', '-filter_complex', parts.join(';'),
+  await runFFmpeg(['-i', name + '.norm.mp4', '-filter_complex', parts.join(';'),
     '-map', '[vout]', '-an',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
     '-movflags', '+faststart', out]);
@@ -648,7 +669,7 @@ async function processSlotVideo(file, name, out, dur) {
 async function processSlotPhoto(file, name, out, dur) {
   await ffmpeg.writeFile(name, new Uint8Array(await file.arrayBuffer()));
   const frames = Math.max(1, Math.round(dur * 30));
-  await ffmpeg.exec(['-i', name,
+  await runFFmpeg(['-i', name,
     '-vf', `scale=2160:3840:force_original_aspect_ratio=increase,crop=2160:3840,setsar=1,zoompan=z='min(1+0.15*on/${frames}\\,1.15)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=1080x1920:fps=30,setsar=1,eq=saturation=1.3:contrast=1.06,colorbalance=rs=-0.08:gs=0.0:bs=0.08:rh=0.10:gh=0.02:bh=-0.08`,
     '-r', '30', '-map', '0:v',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
@@ -686,7 +707,7 @@ async function exportPlantilla() {
     ui.cierre2.value.trim() || tpl.cierre.texto_secundario,
     ui.cierre3.value.trim() || tpl.cierre.texto_final);
   await ffmpeg.writeFile('cierre.png', new Uint8Array(await png.arrayBuffer()));
-  await ffmpeg.exec(['-loop', '1', '-t', String(tpl.cierre.duracion_segundos), '-i', 'cierre.png',
+  await runFFmpeg(['-loop', '1', '-t', String(tpl.cierre.duracion_segundos), '-i', 'cierre.png',
     '-vf', 'fps=30,format=yuv420p,setsar=1', '-r', '30', '-map', '0:v',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
     '-movflags', '+faststart', 'cierre.mp4']);
@@ -696,7 +717,7 @@ async function exportPlantilla() {
   const inputs = [], fc = [];
   slotFiles.forEach((f, i) => { inputs.push('-i', f); fc.push(`[${i}:v]fps=30,format=yuv420p,setsar=1[v${i}]`); });
   fc.push(`${slotFiles.map((_, i) => `[v${i}]`).join('')}concat=n=${slotFiles.length}:v=1:a=0[vout]`);
-  await ffmpeg.exec([...inputs, '-filter_complex', fc.join(';'), '-map', '[vout]',
+  await runFFmpeg([...inputs, '-filter_complex', fc.join(';'), '-map', '[vout]',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
     '-movflags', '+faststart', 'plantilla.mp4']);
 
@@ -705,7 +726,7 @@ async function exportPlantilla() {
 
   if (musicName) {
     setStep('Añadiendo la música…');
-    await ffmpeg.exec(['-i', 'plantilla.mp4', '-i', musicName, '-filter_complex',
+    await runFFmpeg(['-i', 'plantilla.mp4', '-i', musicName, '-filter_complex',
       `[1:a]volume=${MUSIC_VOLUME_SOLO},aloop=loop=-1:size=2e+09,atrim=0:${totalDur.toFixed(2)}[aout]`,
       '-map', '0:v', '-map', '[aout]',
       '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
@@ -727,6 +748,7 @@ async function exportar() {
     await ensureFFmpeg();
     const outName = state.mode === 'plantilla' ? await exportPlantilla() : await exportEfecto();
     const data = await ffmpeg.readFile(outName);
+    if (!data || data.length === 0) throw new Error('El video final salió vacío (0 bytes). Prueba con otro video o vuelve a intentarlo.');
     if (state.outBlob) URL.revokeObjectURL(state.outBlob);
     state.outBlob = URL.createObjectURL(new Blob([data], { type: 'video/mp4' }));
     ui.outVideo.src = state.outBlob;
@@ -738,6 +760,7 @@ async function exportar() {
     ui.resultado.scrollIntoView({ behavior: 'smooth' });
   } catch (e) {
     ui.estado.textContent = 'Algo falló: ' + (e && e.message ? e.message : e) + ' Prueba con un video más corto o vuelve a intentarlo.';
+    showLog();
     ui.btnExportar.disabled = false;
     return;
   }
@@ -900,4 +923,5 @@ buildSlots();
 ensureFFmpeg().catch((e) => {
   ui.cargaTitulo.textContent = 'No se pudo preparar el editor';
   ui.cargaTexto.textContent = 'Revisa tu conexión y recarga la página. ' + (e && e.message ? e.message : '');
+  showLog();
 });
