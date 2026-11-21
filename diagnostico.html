@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="es">
-<head><meta charset="utf-8"><title>Diagnóstico Editor Murillo's</title></head>
+<head><meta charset="utf-8"><title>Diagnóstico Editor Murillo's v2</title></head>
 <body>
-<h1>Diagnóstico del pipeline de Editor Murillo's</h1>
+<h1>Diagnóstico del pipeline de Editor Murillo's (v2)</h1>
 <pre id="out">Iniciando…</pre>
 <script type="module">
 import { FFmpeg } from './vendor/ffmpeg/index.js';
@@ -10,7 +10,8 @@ const out = document.getElementById('out');
 const logs = [];
 function log(...a) { const s = a.join(' '); logs.push(s); out.textContent = logs.join('\n'); }
 const ffmpeg = new FFmpeg();
-ffmpeg.on('log', ({ message }) => { logs.push('[ffmpeg] ' + message); if (logs.length > 500) logs.shift(); out.textContent = logs.join('\n'); });
+const ffLogs = [];
+ffmpeg.on('log', ({ message }) => { ffLogs.push(message); if (ffLogs.length > 400) ffLogs.shift(); });
 try {
   log('Cargando motor…');
   await ffmpeg.load({
@@ -18,14 +19,26 @@ try {
     wasmURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm',
   });
   log('Motor listo.');
-  const titan = new Uint8Array(await (await fetch('https://github.com/google/fonts/raw/main/ofl/titanone/TitanOne-Regular.ttf')).arrayBuffer());
-  log('Titan One descargado: ' + titan.length + ' bytes');
-  await ffmpeg.writeFile('/TitanOne-Regular.ttf', titan);
+  let font = null;
+  try {
+    const t = new Uint8Array(await (await fetch('https://github.com/google/fonts/raw/main/ofl/titanone/TitanOne-Regular.ttf')).arrayBuffer());
+    log('Titan github.com OK: ' + t.length + ' bytes');
+    await ffmpeg.writeFile('/TitanOne-Regular.ttf', t); font = '/TitanOne-Regular.ttf';
+  } catch (e) { log('Titan github.com FALLO: ' + e.message); }
+  if (!font) {
+    try {
+      const t = new Uint8Array(await (await fetch('https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/titanone/TitanOne-Regular.ttf')).arrayBuffer());
+      log('Titan jsDelivr OK: ' + t.length + ' bytes');
+      await ffmpeg.writeFile('/TitanOne-Regular.ttf', t); font = '/TitanOne-Regular.ttf';
+    } catch (e) { log('Titan jsDelivr FALLO: ' + e.message); }
+  }
+  if (!font) { font = '/fonts/Lato-Bold.ttf'; log('Sin fuente: se usara ' + font + ' (no existe, como hace la app)'); }
+  log('Fuente a usar: ' + font);
   const clip = new Uint8Array(await (await fetch('./test-editor-clip-audio.mp4')).arrayBuffer());
   log('Clip descargado: ' + clip.length + ' bytes');
   await ffmpeg.writeFile('entrada.mp4', clip);
 
-  logs.length = 0; log('--- normalize ---');
+  ffLogs.length = 0; log('--- normalize ---');
   const r1 = await ffmpeg.exec(['-i', 'entrada.mp4',
     '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30,format=yuv420p',
     '-r', '30', '-map', '0:v', '-map', '0:a?',
@@ -34,7 +47,6 @@ try {
   log('normalize ret = ' + r1);
   try { const d = await ffmpeg.readFile('norm.mp4'); log('norm.mp4 bytes = ' + d.length); } catch (e) { log('norm.mp4 ERROR: ' + e.message); }
 
-  const font = '/TitanOne-Regular.ttf';
   await ffmpeg.writeFile('/b_0.txt', new TextEncoder().encode('HOY EN MULSAY'));
   await ffmpeg.writeFile('/f_0.txt', new TextEncoder().encode('Pide por WhatsApp 999 990 2960'));
   const vf = [
@@ -45,12 +57,14 @@ try {
     `drawtext=fontfile=${font}:textfile=/f_0.txt:fontsize=46:fontcolor=white:borderw=4:bordercolor=white:x=(w-text_w)/2:y=1480`,
     `drawtext=fontfile=${font}:textfile=/f_0.txt:fontsize=46:fontcolor=#FFCC00:borderw=0:x=(w-text_w)/2:y=1480`,
   ].join(',');
-  logs.length = 0; log('--- applyBubble ---');
+  ffLogs.length = 0; log('--- applyBubble ---');
   const r2 = await ffmpeg.exec(['-i', 'norm.mp4', '-vf', vf, '-map', '0:v', '-map', '0:a?',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
     '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', 'efecto.mp4']);
   log('applyBubble ret = ' + r2);
   try { const d = await ffmpeg.readFile('efecto.mp4'); log('efecto.mp4 bytes = ' + d.length); } catch (e) { log('efecto.mp4 ERROR: ' + e.message); }
+  log('--- ultimas lineas ffmpeg ---');
+  ffLogs.slice(-15).forEach((l) => log('[ffmpeg] ' + l));
   log('=== FIN ===');
   document.title = 'DONE';
 } catch (e) {
