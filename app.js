@@ -47,8 +47,12 @@ const FFMPEG_ESM = new URL('vendor/ffmpeg/index.js', APP_BASE).href;
  * El .wasm pesa 32 MB y GitHub no permite subirlo por la web (límite 25 MB). */
 const CORE_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js';
 const WASM_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm';
-const TITAN_URL = 'https://github.com/google/fonts/raw/main/ofl/titanone/TitanOne-Regular.ttf';
-const LATO_URL = 'https://github.com/google/fonts/raw/main/ofl/lato/Lato-Bold.ttf';
+/* Fuentes: se bajan de jsDelivr, no de github.com. La descarga desde
+ * github.com/.../raw/... falla con "Failed to fetch" dentro del
+ * navegador (la redirección a raw.githubusercontent.com no pasa), así
+ * que las letras burbuja quedaban sin fuente y el video salía vacío. */
+const TITAN_URL = 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/titanone/TitanOne-Regular.ttf';
+const LATO_URL = 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/lato/Lato-Bold.ttf';
 const TRANSFORMERS_URL = 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js';
 const WHISPER_MODEL = 'Xenova/whisper-tiny';
 
@@ -136,13 +140,19 @@ async function ensureFonts() {
   if (fontsReady) return;
   try { await ffmpeg.createDir('/fonts'); } catch (e) { /* ya existe */ }
   try {
-    const buf = new Uint8Array(await (await fetch(TITAN_URL)).arrayBuffer());
+    const res = await fetch(TITAN_URL);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const buf = new Uint8Array(await res.arrayBuffer());
+    if (!buf.length) throw new Error('fuente vacía');
     await ffmpeg.writeFile('/TitanOne-Regular.ttf', buf);
     titanBlobURL = URL.createObjectURL(new Blob([buf], { type: 'font/ttf' }));
     titanOK = true;
   } catch (e) { titanOK = false; }
   try {
-    const buf = new Uint8Array(await (await fetch(LATO_URL)).arrayBuffer());
+    const res = await fetch(LATO_URL);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const buf = new Uint8Array(await res.arrayBuffer());
+    if (!buf.length) throw new Error('fuente vacía');
     await ffmpeg.writeFile('/fonts/Lato-Bold.ttf', buf);
     latoOK = true;
   } catch (e) { latoOK = false; }
