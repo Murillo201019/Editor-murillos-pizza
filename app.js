@@ -81,6 +81,7 @@ const ui = {
   relleno: $('relleno'), btnVideo: $('btn-video'), btnVideo2: $('btn-video-2'),
   videoInput: $('videoInput'), emptyState: $('empty-state'),
   videoInfo: $('video-info'), preview: $('preview'), timelineFill: $('timeline-fill'),
+  previewZone: $('preview-zone'),
   previewWrap: $('preview-wrap'), pvBubble: $('pv-bubble'), pvLyric: $('pv-lyric'),
   pvSubs: $('pv-subs'), pvNote: $('pv-note'), btnRecargar: $('btn-recargar'),
   panelEfecto: $('panel-efecto'), panelPlantilla: $('panel-plantilla'),
@@ -817,6 +818,7 @@ async function exportar() {
     ui.progreso.style.display = 'none';
     ui.resultado.style.display = 'block';
     ui.estado.textContent = 'Listo. Ya lo puedes guardar o compartir.';
+    ui.previewZone.classList.add('no-sticky');
     ui.resultado.scrollIntoView({ behavior: 'smooth' });
   } catch (e) {
     ui.estado.textContent = 'Algo falló: ' + (e && e.message ? e.message : e) + ' Prueba con un video más corto o vuelve a intentarlo.';
@@ -835,7 +837,7 @@ const CSS_FILTERS = {
   original: '',
   calido: 'sepia(.35) saturate(1.2) contrast(1.03) hue-rotate(-8deg)',
   frio: 'saturate(1.1) contrast(1.03) hue-rotate(12deg)',
-  vivo: 'saturate(1.6) contrast(1.08)',
+  vivo: 'saturate(1.8) contrast(1.1)',
   byn: 'grayscale(1) contrast(1.05)',
 };
 let lyricTimer = null, lyricIdx = 0;
@@ -1012,8 +1014,8 @@ ui.videoInput.addEventListener('change', async (ev) => {
     ui.btnVideo2.classList.remove('oculto');
     ui.timelineFill.style.width = Math.min(100, (meta.duration / 60) * 100) + '%';
     updatePreview();
-    /* Bajar a las herramientas para que queden a la vista. */
-    document.getElementById('paneles').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    /* La zona de vista previa queda fija arriba: al bajar a las
+     * herramientas, el video sigue a la vista. No hace falta desplazar. */
   } catch (e) {
     ui.videoInfo.textContent = e.message;
     state.mainFile = null;
@@ -1076,6 +1078,7 @@ ui.btnOtro.addEventListener('click', () => {
   buildSlots();
   openPanel('efectos');
   updatePreview();
+  ui.previewZone.classList.remove('no-sticky');
   refreshExportButton();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 });

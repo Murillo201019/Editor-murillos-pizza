@@ -31,7 +31,10 @@
   #relleno{ height:100%; width:100%; background:repeating-linear-gradient(45deg,var(--amarillo) 0 12px,#8a7400 12px 24px); background-size:34px 100%; animation:desliza 1s linear infinite; }
   @keyframes desliza{ from{ background-position:0 0; } to{ background-position:34px 0; } }
   #btn-recargar{ background:var(--panel2); color:#fff; border:1px solid var(--borde); border-radius:12px; font-size:13px; padding:9px 14px; margin-top:10px; cursor:pointer; }
-  /* Vista previa */
+  /* Zona de vista previa fija arriba (estilo CapCut): al bajar a las
+   * herramientas, el video sigue a la vista y se ve cada cambio en vivo. */
+  #preview-zone{ position:sticky; top:56px; z-index:15; background:var(--negro); padding-bottom:2px; }
+  #preview-zone.no-sticky{ position:relative; }
   #preview-wrap{ background:#000; border-radius:14px; overflow:hidden; min-height:280px; display:flex; align-items:center; justify-content:center; position:relative; }
   #preview{ width:100%; max-height:52vh; display:none; background:#000; }
   /* Capas de vista previa: muestran el texto, los filtros y los subtítulos
@@ -42,7 +45,7 @@
   .pv-line .s1{ color:transparent; }
   .pv-line .s2{ color:transparent; }
   .pv-line .s3{ color:#FFCC00; }
-  #pv-subs{ position:absolute; left:8%; right:8%; bottom:13%; text-align:center; color:#fff; font-weight:700; text-shadow:0 2px 4px #000, 0 0 2px #000; background:rgba(0,0,0,.45); border-radius:8px; padding:4px 8px; pointer-events:none; }
+  #pv-subs{ position:absolute; left:8%; right:8%; bottom:13%; text-align:center; color:#fff; font-weight:700; text-shadow:0 2px 4px #000, 0 0 2px #000; pointer-events:none; }
   #pv-note{ position:absolute; left:50%; transform:translateX(-50%); bottom:8px; background:rgba(0,0,0,.7); color:#ffd479; font-size:12px; padding:5px 10px; border-radius:12px; white-space:nowrap; pointer-events:none; }
   #empty-state{ text-align:center; padding:36px 16px; }
   #empty-state .big-emoji{ font-size:44px; }
@@ -117,6 +120,7 @@
   </div>
 
   <!-- Vista previa -->
+  <div id="preview-zone">
   <div id="preview-wrap">
     <div id="empty-state">
       <div class="big-emoji">📹</div>
@@ -138,6 +142,7 @@
       <span id="video-info">Sin video todavía.</span>
       <label class="filebtn mini oculto" id="btn-video-2" for="videoInput">Cambiar video</label>
     </div>
+  </div>
   </div>
 
   <!-- Progreso y resultado -->
