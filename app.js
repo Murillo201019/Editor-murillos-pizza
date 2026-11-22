@@ -1,5 +1,6 @@
-/* Editor Murillo's — v5 (interfaz estilo CapCut: vista previa arriba,
- * barra de herramientas abajo, paneles por herramienta; motor igual).
+/* Editor Murillo's — v8 (vista previa fija arriba, errores con el paso
+ * y la causa real, y liberación de memoria entre pasos para que los
+ * videos pesados del teléfono no tumben la exportación).
  * Todo el proceso pasa en el teléfono: nada se sube a internet.
  * Motor de video: ffmpeg.wasm 0.12.10 (un solo hilo, sin COOP/COEP).
  * Subtítulos: @xenova/transformers 2.17.2, modelo Xenova/whisper-tiny.
@@ -119,10 +120,23 @@ function paintProgress(p) {
 async function runFFmpeg(args) {
   const ret = await ffmpeg.exec(args);
   if (typeof ret === 'number' && ret !== 0) {
-    const tail = logLines.slice(-6).join(' | ');
-    throw new Error('El motor de video terminó con código ' + ret + (tail ? ' — ' + tail : ''));
+    /* El error real no siempre es la última línea (el encabezado del
+     * codificador x264 es lo último que se ve cuando el proceso muere
+     * al empezar a codificar), así que se juntan las líneas con
+     * "error" y las 15 últimas, para que el mensaje diga la causa. */
+    const tail = logLines.slice(-15);
+    const errs = logLines.filter((l) => /error|failed|cannot|invalid|unable|no such|out of memory|killed|abort/i.test(l)).slice(-4);
+    const merged = [...errs.filter((l) => !tail.includes(l)), ...tail];
+    throw new Error('El motor de video terminó con código ' + ret + (merged.length ? ' — ' + merged.join(' | ') : ''));
   }
   return ret;
+}
+
+/* Borra un archivo intermedio si existe: cada video intermedio pesa
+ * 10-30 MB y en el teléfono la memoria es limitada; borrarlos baja
+ * la memoria que usa la exportación. */
+async function rmQuiet(name) {
+  try { await ffmpeg.deleteFile(name); } catch (_) { /* no existe, no pasa nada */ }
 }
 
 /* Muestra el registro técnico (stderr de ffmpeg) en la página. */
@@ -362,6 +376,18 @@ async function transcribeWords(pcm16k) {
   return words;
 }
 
+/* Libera el modelo de voz después de transcribir: el modelo y su motor
+ * ocupan mucha memoria, y el video final todavía tiene que codificarse.
+ * Si se vuelve a exportar, el modelo se descarga de nuevo (ya en caché). */
+async function releaseTranscriber() {
+  if (!transcriberPromise) return;
+  const p = transcriberPromise; transcriberPromise = null;
+  try {
+    const t = await p;
+    if (t && typeof t.dispose === 'function') await t.dispose();
+  } catch (_) { /* si no se puede liberar, se sigue igual */ }
+}
+
 async function extractAudioWav(inputName, wavName) {
   await runFFmpeg(['-i', inputName, '-vn', '-ac', '1', '-ar', '16000', '-f', 'wav', wavName]);
   const data = await ffmpeg.readFile(wavName);
@@ -516,6 +542,9 @@ async function applyLyric(input, output, lines, duration) {
     '-map', '[vout]', '-map', '[aout]',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
     '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', output]);
+  await rmQuiet('parteA.mp4');
+  await rmQuiet('zoom.mp4');
+  await rmQuiet('zoom.png');
 }
 
 /* Ir y venir: trozos de 0.2 s, uno de cada dos al revés. Sin audio. */
@@ -631,6 +660,7 @@ async function exportEfecto() {
   logLines = [];
   await normalize('entrada.mp4', 'norm.mp4', state.speed);
   let cur = 'norm.mp4';
+  await rmQuiet('entrada.mp4');
   state.workDuration = state.mainDuration / state.speed;
   // El registro de la conversión ya dice si el video trae audio.
   const hasAudio = logLines.some((l) => l.includes('Audio:'));
@@ -643,6 +673,7 @@ async function exportEfecto() {
     const segs = keepSegments(state.workDuration, sils);
     if (sils.length && segs.length > 1) {
       await cutSilences(cur, 'cortado.mp4', segs, true);
+      await rmQuiet(cur);
       cur = 'cortado.mp4';
       state.workDuration = segs.reduce((a, [s, e]) => a + (e - s), 0);
     }
@@ -652,28 +683,33 @@ async function exportEfecto() {
     setStep('Poniendo las letras burbuja…');
     const lines = [$('burbuja-1').value, $('burbuja-2').value, $('burbuja-3').value];
     await applyBubble(cur, 'efecto.mp4', lines, { size: state.textSize, pos: state.textPos });
+    await rmQuiet(cur);
     cur = 'efecto.mp4';
   } else if (effect === 'letra') {
     setStep('Armando la letra animada…');
     const lines = [$('letra-1').value, $('letra-2').value, $('letra-3').value, $('letra-4').value];
     await applyLyric(cur, 'efecto.mp4', lines, state.workDuration);
+    await rmQuiet(cur);
     cur = 'efecto.mp4';
     state.workDuration += 3;
   } else if (effect === 'irvenir') {
     setStep('Haciendo el ir y venir…');
     const d = Math.min(state.workDuration, 30);
     await applyBackNForth(cur, 'efecto.mp4', d);
+    await rmQuiet(cur);
     cur = 'efecto.mp4';
     state.workDuration = d;
   } else if (effect === 'cine') {
     setStep('Poniendo el tono cine…');
     await applyCine(cur, 'efecto.mp4');
+    await rmQuiet(cur);
     cur = 'efecto.mp4';
   }
 
   if (state.filter !== 'original') {
     setStep('Poniendo el filtro…');
     await applyFilter(cur, 'filtro.mp4', state.filter);
+    await rmQuiet(cur);
     cur = 'filtro.mp4';
   }
 
@@ -691,6 +727,10 @@ async function exportEfecto() {
         assFile = 'subs.ass';
       }
     } catch (e) { assFile = null; /* sigue sin subtítulos */ }
+    /* El audio extraído y el modelo de voz ya no hacen falta: se
+     * liberan antes del video final para que no falte memoria. */
+    await rmQuiet('audio.wav');
+    await releaseTranscriber();
   }
 
   setStep('Exportando el video final…');
@@ -700,6 +740,7 @@ async function exportEfecto() {
     const data = await ffmpeg.readFile(cur);
     await ffmpeg.writeFile('salida.mp4', data);
   }
+  await rmQuiet(cur);
   return 'salida.mp4';
 }
 
@@ -821,7 +862,9 @@ async function exportar() {
     ui.previewZone.classList.add('no-sticky');
     ui.resultado.scrollIntoView({ behavior: 'smooth' });
   } catch (e) {
-    ui.estado.textContent = 'Algo falló: ' + (e && e.message ? e.message : e) + ' Prueba con un video más corto o vuelve a intentarlo.';
+    /* El nombre del paso en el que falló dice dónde se atoró (antes
+     * solo salía el encabezado del codificador y no se sabía el paso). */
+    ui.estado.textContent = 'Algo falló en "' + (stepName || 'la exportación') + '": ' + (e && e.message ? e.message : e) + ' Prueba con un video más corto o vuelve a intentarlo.';
     showLog();
     ui.btnExportar.disabled = false;
     return;
