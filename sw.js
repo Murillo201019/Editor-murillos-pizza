@@ -4,7 +4,7 @@
  * el modelo de voz (CDN) NO se guardan aquí: el navegador los guarda
  * solo, como siempre.
  */
-const CACHE = 'editor-murillos-v8';
+const CACHE = 'editor-murillos-v9';
 const SHELL = [
   './',
   './index.html',

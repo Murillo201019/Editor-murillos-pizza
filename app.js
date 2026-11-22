@@ -127,7 +127,8 @@ async function runFFmpeg(args) {
     const tail = logLines.slice(-15);
     const errs = logLines.filter((l) => /error|failed|cannot|invalid|unable|no such|out of memory|killed|abort/i.test(l)).slice(-4);
     const merged = [...errs.filter((l) => !tail.includes(l)), ...tail];
-    throw new Error('El motor de video terminó con código ' + ret + (merged.length ? ' — ' + merged.join(' | ') : ''));
+    const hint = errs.length ? '' : ' — sin línea de error: el proceso se detuvo al arrancar el codificador, en el teléfono suele ser falta de memoria';
+    throw new Error('El motor de video terminó con código ' + ret + (merged.length ? ' — ' + merged.join(' | ') : '') + hint);
   }
   return ret;
 }
@@ -425,7 +426,7 @@ async function cutSilences(input, output, segs, hasAudio) {
   segs.forEach(([s, e], i) => {
     parts.push(`[0:v]trim=start=${s.toFixed(3)}:end=${e.toFixed(3)},setpts=PTS-STARTPTS,setsar=1[v${i}]`);
     if (hasAudio) {
-      parts.push(`[0:a]atrim=start=${s.toFixed(3)}:end=${e.toFixed(3)},asetpts=PTS-STARTPTS[a${i}]`);
+      parts.push(`[0:a:0]atrim=start=${s.toFixed(3)}:end=${e.toFixed(3)},asetpts=PTS-STARTPTS[a${i}]`);
       labels.push(`[v${i}]`, `[a${i}]`);
     } else labels.push(`[v${i}]`);
   });
@@ -440,13 +441,15 @@ async function cutSilences(input, output, segs, hasAudio) {
 }
 
 /* ---------------- normalizar a 9:16 ---------------- */
+/* Solo se conserva la primera pista de audio: algunos videos del
+ * teléfono traen dos y la segunda solo gasta memoria en cada paso. */
 /* speed: 1 = normal (comando exacto de antes). Con otra velocidad se
  * acelera o se frena el video (setpts) y el audio (atempo). */
 async function normalize(input, output, speed) {
   if (speed === 1) {
     await runFFmpeg(['-i', input,
       '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30,format=yuv420p',
-      '-r', '30', '-map', '0:v', '-map', '0:a?',
+      '-r', '30', '-map', '0:v', '-map', '0:a:0?',
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
       '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', output]);
     return;
@@ -454,7 +457,7 @@ async function normalize(input, output, speed) {
   await runFFmpeg(['-i', input,
     '-vf', `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,setpts=PTS/${speed},fps=30,format=yuv420p`,
     '-af', `atempo=${speed}`,
-    '-r', '30', '-map', '0:v', '-map', '0:a?',
+    '-r', '30', '-map', '0:v', '-map', '0:a:0?',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
     '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', output]);
 }
@@ -496,9 +499,9 @@ async function applyBubble(input, output, lines, opts) {
   const foot = bubblePasses([WHATSAPP], 1480, 46, 'f');
   const footFilters = await writeTextFiles(foot);
   const vf = [...filters, ...footFilters].join(',');
-  await runFFmpeg(['-i', input, '-vf', vf, '-map', '0:v', '-map', '0:a?',
+  await runFFmpeg(['-i', input, '-vf', vf, '-map', '0:v', '-map', '0:a:0?',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
-    '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', output]);
+    '-c:a', 'copy', '-movflags', '+faststart', output]);
 }
 
 /* Letra animada: frases que aparecen una por una + zoom final. */
@@ -522,9 +525,9 @@ async function applyLyric(input, output, lines, duration) {
     parts.push(`drawtext=fontfile=${font}:textfile=${file}:fontsize=${fontSize}:fontcolor=#FFCC00:borderw=0:x=(w-text_w)/2:y=${y}:${en}`);
   });
   const filters = await writeTextFiles(parts);
-  await runFFmpeg(['-i', input, '-vf', filters.join(','), '-map', '0:v', '-map', '0:a?',
+  await runFFmpeg(['-i', input, '-vf', filters.join(','), '-map', '0:v', '-map', '0:a:0?',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
-    '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', 'parteA.mp4']);
+    '-c:a', 'copy', '-movflags', '+faststart', 'parteA.mp4']);
 
   // Zoom final con el PNG del canvas (3 s, ease-in-cúbico).
   const png = await makeZoomPNG();
@@ -568,9 +571,9 @@ async function applyBackNForth(input, output, duration) {
 async function applyCine(input, output) {
   await runFFmpeg(['-i', input,
     '-vf', 'eq=saturation=1.3:contrast=1.06,colorbalance=rs=-0.08:gs=0.0:bs=0.08:rh=0.10:gh=0.02:bh=-0.08',
-    '-map', '0:v', '-map', '0:a?',
+    '-map', '0:v', '-map', '0:a:0?',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
-    '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', output]);
+    '-c:a', 'copy', '-movflags', '+faststart', output]);
 }
 
 /* Filtros de color (panel Filtros). Se suman al efecto elegido. */
@@ -587,9 +590,9 @@ async function applyFilter(input, output, name) {
     await ffmpeg.writeFile(output, data);
     return;
   }
-  await runFFmpeg(['-i', input, '-vf', vf, '-map', '0:v', '-map', '0:a?',
+  await runFFmpeg(['-i', input, '-vf', vf, '-map', '0:v', '-map', '0:a:0?',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
-    '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', output]);
+    '-c:a', 'copy', '-movflags', '+faststart', output]);
 }
 
 /* ---------------- render final (efecto) ---------------- */
@@ -606,7 +609,7 @@ async function finalRender(input, output, opts) {
     fc.push(`${v}fps=30,format=yuv420p[vout]`);
     let maps;
     if (musicName && hasAudio) {
-      fc.push(`[0:a]volume=${voiceVolume()}[voice]`);
+      fc.push(`[0:a:0]volume=${voiceVolume()}[voice]`);
       fc.push(`[1:a]volume=${musicVolume()},aloop=loop=-1:size=2e+09[bg]`);
       fc.push('[voice][bg]amix=inputs=2:duration=first:normalize=0[aout]');
       maps = ['-map', '[vout]', '-map', '[aout]'];
@@ -614,7 +617,7 @@ async function finalRender(input, output, opts) {
       fc.push(`[1:a]volume=${musicVolumeSolo()},aloop=loop=-1:size=2e+09,atrim=0:${state.workDuration.toFixed(2)}[aout]`);
       maps = ['-map', '[vout]', '-map', '[aout]'];
     } else {
-      maps = ['-map', '[vout]', '-map', '0:a?'];
+      maps = ['-map', '[vout]', '-map', '0:a:0?'];
     }
     return [...inputs, '-filter_complex', fc.join(';'), ...maps,
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
