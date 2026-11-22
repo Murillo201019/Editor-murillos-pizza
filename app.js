@@ -81,6 +81,8 @@ const ui = {
   relleno: $('relleno'), btnVideo: $('btn-video'), btnVideo2: $('btn-video-2'),
   videoInput: $('videoInput'), emptyState: $('empty-state'),
   videoInfo: $('video-info'), preview: $('preview'), timelineFill: $('timeline-fill'),
+  previewWrap: $('preview-wrap'), pvBubble: $('pv-bubble'), pvLyric: $('pv-lyric'),
+  pvSubs: $('pv-subs'), pvNote: $('pv-note'), btnRecargar: $('btn-recargar'),
   panelEfecto: $('panel-efecto'), panelPlantilla: $('panel-plantilla'),
   efectos: $('efectos'), opBurbuja: $('op-burbuja'), opLetra: $('op-letra'),
   avisoIrvenir: $('aviso-irvenir'), textoHint: $('texto-hint'),
@@ -825,6 +827,81 @@ async function exportar() {
   ui.btnExportar.disabled = false;
 }
 
+/* ---------------- vista previa en vivo ---------------- */
+/* Muestra el texto, los filtros y la velocidad sobre el video sin
+ * exportar (como en CapCut): el usuario ve el resultado al instante
+ * y solo exporta cuando le gusta. */
+const CSS_FILTERS = {
+  original: '',
+  calido: 'sepia(.35) saturate(1.2) contrast(1.03) hue-rotate(-8deg)',
+  frio: 'saturate(1.1) contrast(1.03) hue-rotate(12deg)',
+  vivo: 'saturate(1.6) contrast(1.08)',
+  byn: 'grayscale(1) contrast(1.05)',
+};
+let lyricTimer = null, lyricIdx = 0;
+
+function bubbleLineHTML(text, px) {
+  const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const bwBlack = Math.max(2, Math.round(px * 0.16));
+  const bwWhite = Math.max(1, Math.round(px * 0.08));
+  return `<span class="s1" style="-webkit-text-stroke:${bwBlack}px #000">${esc}</span>` +
+    `<span class="s2" style="-webkit-text-stroke:${bwWhite}px #fff">${esc}</span>` +
+    `<span class="s3">${esc}</span>`;
+}
+
+function updatePreview() {
+  const v = ui.preview;
+  const hasVideo = !!state.mainFile && !!v.src;
+  // Filtros y tono cine como filtro CSS sobre el video.
+  let f = CSS_FILTERS[state.filter] || '';
+  if (state.effect === 'cine') f = (f ? f + ' ' : '') + 'saturate(1.3) contrast(1.06) sepia(.08)';
+  v.style.filter = f;
+  // Velocidad: el video de vista previa corre a la velocidad elegida.
+  if (hasVideo) v.playbackRate = state.speed;
+  // Texto burbuja (mismo tamaño y posición que al exportar).
+  const wrap = ui.previewWrap;
+  const scale = wrap.clientWidth / 1080 || 0.3;
+  let html = '';
+  if (hasVideo && state.effect === 'burbuja') {
+    const lines = [$('burbuja-1').value, $('burbuja-2').value, $('burbuja-3').value].map((l) => l.trim()).filter(Boolean).slice(0, 3);
+    const base = state.textSize === 'chico' ? 80 : state.textSize === 'grande' ? 130 : 110;
+    const fontSize = lines.some((l) => l.length > 14) ? Math.max(56, base - 22) : base;
+    const startY = state.textPos === 'centro' ? 800 : state.textPos === 'abajo' ? 1050 : 380;
+    lines.forEach((line, i) => {
+      const y = startY + i * Math.round(fontSize * 1.3);
+      html += `<div class="pv-line" style="top:${(y / 1920 * 100).toFixed(1)}%;font-size:${Math.round(fontSize * scale)}px">${bubbleLineHTML(line, fontSize * scale)}</div>`;
+    });
+    html += `<div class="pv-line" style="top:77%;font-size:${Math.round(46 * scale)}px">${bubbleLineHTML(WHATSAPP, 46 * scale)}</div>`;
+  }
+  ui.pvBubble.innerHTML = html;
+  // Letra animada: las frases aparecen una por una, en ciclo.
+  clearInterval(lyricTimer); lyricTimer = null;
+  if (hasVideo && state.effect === 'letra') {
+    const lines = [$('letra-1').value, $('letra-2').value, $('letra-3').value, $('letra-4').value].map((l) => l.trim()).filter(Boolean).slice(0, 4);
+    const showLyric = () => {
+      const px = Math.round(96 * scale);
+      if (lyricIdx < lines.length) {
+        const y = (700 + lyricIdx * 120) / 1920 * 100;
+        ui.pvLyric.innerHTML = `<div class="pv-line" style="top:${y.toFixed(1)}%;font-size:${px}px">${bubbleLineHTML(lines[lyricIdx], px)}</div>`;
+      } else {
+        const pxBig = Math.round(120 * scale);
+        ui.pvLyric.innerHTML = `<div class="pv-line" style="top:44%;font-size:${pxBig}px">${bubbleLineHTML("MURILLO'S PIZZA", pxBig)}</div>`;
+      }
+      lyricIdx = (lyricIdx + 1) % (lines.length + 1);
+    };
+    lyricIdx = 0; showLyric();
+    lyricTimer = setInterval(showLyric, 1000);
+  } else {
+    ui.pvLyric.innerHTML = '';
+  }
+  // Subtítulos: una muestra de dónde saldrán.
+  const showSubs = hasVideo && ui.chkSubs.checked && state.effect !== 'irvenir' && state.mode === 'efecto';
+  ui.pvSubs.classList.toggle('oculto', !showSubs);
+  if (showSubs) ui.pvSubs.style.fontSize = Math.round(28 * scale) + 'px';
+  // Ir y venir no se puede previsualizar en vivo: avisar.
+  ui.pvNote.classList.toggle('oculto', !(hasVideo && state.effect === 'irvenir'));
+}
+
 /* ---------------- interfaz ---------------- */
 function refreshExportButton() {
   if (state.mode === 'plantilla') {
@@ -891,6 +968,7 @@ function setEffect(name) {
   ui.opLetra.classList.toggle('oculto', name !== 'letra');
   ui.avisoIrvenir.classList.toggle('oculto', name !== 'irvenir');
   if (ui.textoHint) ui.textoHint.classList.toggle('oculto', name === 'burbuja' || name === 'letra');
+  updatePreview();
 }
 
 /* Grupo de botones donde solo uno queda elegido (tamaño, posición, etc.). */
@@ -905,12 +983,16 @@ function wireSeg(id, key, cb) {
 /* ---------------- arranque ---------------- */
 document.querySelectorAll('#toolbar button').forEach((b) => b.addEventListener('click', () => openPanel(b.dataset.panel)));
 document.querySelectorAll('#efectos button').forEach((b) => b.addEventListener('click', () => setEffect(b.dataset.efecto)));
-wireSeg('texto-tam', 'tam', (v) => { state.textSize = v; });
-wireSeg('texto-pos', 'pos', (v) => { state.textPos = v; });
+wireSeg('texto-tam', 'tam', (v) => { state.textSize = v; updatePreview(); });
+wireSeg('texto-pos', 'pos', (v) => { state.textPos = v; updatePreview(); });
 wireSeg('musica-vol', 'vol', (v) => { state.musicVol = v; });
 wireSeg('voz-vol', 'voz', (v) => { state.voiceVol = v; });
-wireSeg('filtros', 'filtro', (v) => { state.filter = v; });
-wireSeg('velocidad', 'vel', (v) => { state.speed = parseFloat(v); });
+wireSeg('filtros', 'filtro', (v) => { state.filter = v; updatePreview(); });
+wireSeg('velocidad', 'vel', (v) => { state.speed = parseFloat(v); updatePreview(); });
+['burbuja-1', 'burbuja-2', 'burbuja-3', 'letra-1', 'letra-2', 'letra-3', 'letra-4'].forEach((id) => $(id).addEventListener('input', updatePreview));
+ui.chkSubs.addEventListener('change', updatePreview);
+ui.btnRecargar.addEventListener('click', () => location.reload());
+window.addEventListener('resize', updatePreview);
 
 ui.videoInput.addEventListener('change', async (ev) => {
   const f = ev.target.files[0];
@@ -929,6 +1011,7 @@ ui.videoInput.addEventListener('change', async (ev) => {
     ui.emptyState.style.display = 'none';
     ui.btnVideo2.classList.remove('oculto');
     ui.timelineFill.style.width = Math.min(100, (meta.duration / 60) * 100) + '%';
+    updatePreview();
     /* Bajar a las herramientas para que queden a la vista. */
     document.getElementById('paneles').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
@@ -992,6 +1075,7 @@ ui.btnOtro.addEventListener('click', () => {
   ui.musicaInfo.textContent = 'Se mezcla bajita para no tapar tu voz. Si la canción es más corta que el video, se repite.';
   buildSlots();
   openPanel('efectos');
+  updatePreview();
   refreshExportButton();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 });
@@ -1002,7 +1086,7 @@ if ('serviceWorker' in navigator) {
 
 /* Carga el motor en cuanto abre la app, para que no espere al exportar. */
 buildSlots();
-ensureFFmpeg().catch((e) => {
+ensureFFmpeg().then(() => { loadTitanForCanvas().catch(() => {}); updatePreview(); }).catch((e) => {
   ui.cargaTitulo.textContent = 'No se pudo preparar el editor';
   ui.cargaTexto.textContent = 'Revisa tu conexión y recarga la página. ' + (e && e.message ? e.message : '');
   showLog();
