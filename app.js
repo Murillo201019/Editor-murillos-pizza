@@ -1,4 +1,5 @@
-/* Editor Murillo's — v1
+/* Editor Murillo's — v5 (interfaz estilo CapCut: vista previa arriba,
+ * barra de herramientas abajo, paneles por herramienta; motor igual).
  * Todo el proceso pasa en el teléfono: nada se sube a internet.
  * Motor de video: ffmpeg.wasm 0.12.10 (un solo hilo, sin COOP/COEP).
  * Subtítulos: @xenova/transformers 2.17.2, modelo Xenova/whisper-tiny.
@@ -11,6 +12,12 @@
 const state = {
   mode: 'efecto',           // 'efecto' | 'plantilla'
   effect: 'burbuja',        // ninguno | burbuja | letra | irvenir | cine
+  textSize: 'mediano',      // chico | mediano | grande (letras burbuja)
+  textPos: 'arriba',        // arriba | centro | abajo (letras burbuja)
+  musicVol: 'media',        // baja | media | fuerte
+  voiceVol: 'normal',       // silencio | normal | fuerte
+  filter: 'original',       // original | calido | frio | vivo | byn
+  speed: 1,                 // 0.5 | 1 | 1.5 | 2
   mainFile: null, mainDuration: 0, mainSize: 0,
   musicFile: null,
   slots: [null, null, null, null],   // archivos por lugar de la plantilla
@@ -59,8 +66,10 @@ const WHISPER_MODEL = 'Xenova/whisper-tiny';
 const SILENCE_NOISE_DB = -32;   // igual que editar.py
 const SILENCE_MIN_LEN = 0.5;
 const SILENCE_PAD = 0.12;
-const MUSIC_VOLUME = 0.15;      // música bajo la voz
-const MUSIC_VOLUME_SOLO = 0.4;  // música sola (sin voz), p. ej. plantillas
+/* Volúmenes según lo que elige el usuario en el panel de Audio. */
+function musicVolume() { return state.musicVol === 'baja' ? 0.08 : state.musicVol === 'fuerte' ? 0.30 : 0.15; }
+function musicVolumeSolo() { return state.musicVol === 'baja' ? 0.25 : state.musicVol === 'fuerte' ? 0.60 : 0.40; }
+function voiceVolume() { return state.voiceVol === 'silencio' ? 0 : state.voiceVol === 'fuerte' ? 1.5 : 1.0; }
 const SUB_FONT_SIZE = 72;
 const SUB_MARGIN_BOTTOM = 260;
 const WHATSAPP = 'Pide por WhatsApp 999 990 2960';
@@ -69,12 +78,12 @@ const WHATSAPP = 'Pide por WhatsApp 999 990 2960';
 const $ = (id) => document.getElementById(id);
 const ui = {
   carga: $('carga'), cargaTitulo: $('carga-titulo'), cargaTexto: $('carga-texto'),
-  relleno: $('relleno'), btnVideo: $('btn-video'), videoInput: $('videoInput'),
-  videoInfo: $('video-info'), preview: $('preview'),
-  tabEfecto: $('tab-efecto'), tabPlantilla: $('tab-plantilla'),
+  relleno: $('relleno'), btnVideo: $('btn-video'), btnVideo2: $('btn-video-2'),
+  videoInput: $('videoInput'), emptyState: $('empty-state'),
+  videoInfo: $('video-info'), preview: $('preview'), timelineFill: $('timeline-fill'),
   panelEfecto: $('panel-efecto'), panelPlantilla: $('panel-plantilla'),
   efectos: $('efectos'), opBurbuja: $('op-burbuja'), opLetra: $('op-letra'),
-  avisoIrvenir: $('aviso-irvenir'),
+  avisoIrvenir: $('aviso-irvenir'), textoHint: $('texto-hint'),
   chkSilencio: $('chk-silencio'), chkSubs: $('chk-subs'), keyword: $('keyword'),
   slots: $('slots'), tplInput: $('tplInput'), tplInfo: $('tpl-info'),
   cierre1: $('cierre-1'), cierre2: $('cierre-2'), cierre3: $('cierre-3'),
@@ -402,9 +411,20 @@ async function cutSilences(input, output, segs, hasAudio) {
 }
 
 /* ---------------- normalizar a 9:16 ---------------- */
-async function normalize(input, output) {
+/* speed: 1 = normal (comando exacto de antes). Con otra velocidad se
+ * acelera o se frena el video (setpts) y el audio (atempo). */
+async function normalize(input, output, speed) {
+  if (speed === 1) {
+    await runFFmpeg(['-i', input,
+      '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30,format=yuv420p',
+      '-r', '30', '-map', '0:v', '-map', '0:a?',
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
+      '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', output]);
+    return;
+  }
   await runFFmpeg(['-i', input,
-    '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30,format=yuv420p',
+    '-vf', `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,setpts=PTS/${speed},fps=30,format=yuv420p`,
+    '-af', `atempo=${speed}`,
     '-r', '30', '-map', '0:v', '-map', '0:a?',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
     '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', output]);
@@ -436,10 +456,12 @@ async function writeTextFiles(parts) {
   return parts.filter((p) => typeof p === 'string');
 }
 
-async function applyBubble(input, output, lines) {
+async function applyBubble(input, output, lines, opts) {
   const clean = lines.map((l) => l.trim()).filter(Boolean).slice(0, 3);
-  const fontSize = clean.some((l) => l.length > 14) ? 88 : 110;
-  const chain = bubblePasses(clean, 380, fontSize, 'b');
+  const base = opts.size === 'chico' ? 80 : opts.size === 'grande' ? 130 : 110;
+  const fontSize = clean.some((l) => l.length > 14) ? Math.max(56, base - 22) : base;
+  const startY = opts.pos === 'centro' ? 800 : opts.pos === 'abajo' ? 1050 : 380;
+  const chain = bubblePasses(clean, startY, fontSize, 'b');
   const filters = await writeTextFiles(chain);
   // pie con el WhatsApp, más chico; va arriba de la zona de subtítulos (y=1480)
   const foot = bubblePasses([WHATSAPP], 1480, 46, 'f');
@@ -519,6 +541,25 @@ async function applyCine(input, output) {
     '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', output]);
 }
 
+/* Filtros de color (panel Filtros). Se suman al efecto elegido. */
+const FILTERS = {
+  calido: 'eq=saturation=1.15:contrast=1.03,colorbalance=rs=0.06:gs=0.0:bs=-0.06:rh=0.12:gh=0.03:bh=-0.10',
+  frio: 'eq=saturation=1.1:contrast=1.03,colorbalance=rs=-0.06:gs=0.0:bs=0.06:rh=-0.10:gh=-0.02:bh=0.12',
+  vivo: 'eq=saturation=1.6:contrast=1.08',
+  byn: 'eq=saturation=0:contrast=1.05',
+};
+async function applyFilter(input, output, name) {
+  const vf = FILTERS[name];
+  if (!vf) {
+    const data = await ffmpeg.readFile(input);
+    await ffmpeg.writeFile(output, data);
+    return;
+  }
+  await runFFmpeg(['-i', input, '-vf', vf, '-map', '0:v', '-map', '0:a?',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
+    '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', output]);
+}
+
 /* ---------------- render final (efecto) ---------------- */
 async function finalRender(input, output, opts) {
   const { assFile, subLines, musicName, hasAudio } = opts;
@@ -533,12 +574,12 @@ async function finalRender(input, output, opts) {
     fc.push(`${v}fps=30,format=yuv420p[vout]`);
     let maps;
     if (musicName && hasAudio) {
-      fc.push('[0:a]volume=1.0[voice]');
-      fc.push(`[1:a]volume=${MUSIC_VOLUME},aloop=loop=-1:size=2e+09[bg]`);
+      fc.push(`[0:a]volume=${voiceVolume()}[voice]`);
+      fc.push(`[1:a]volume=${musicVolume()},aloop=loop=-1:size=2e+09[bg]`);
       fc.push('[voice][bg]amix=inputs=2:duration=first:normalize=0[aout]');
       maps = ['-map', '[vout]', '-map', '[aout]'];
     } else if (musicName && !hasAudio) {
-      fc.push(`[1:a]volume=${MUSIC_VOLUME_SOLO},aloop=loop=-1:size=2e+09,atrim=0:${state.workDuration.toFixed(2)}[aout]`);
+      fc.push(`[1:a]volume=${musicVolumeSolo()},aloop=loop=-1:size=2e+09,atrim=0:${state.workDuration.toFixed(2)}[aout]`);
       maps = ['-map', '[vout]', '-map', '[aout]'];
     } else {
       maps = ['-map', '[vout]', '-map', '0:a?'];
@@ -570,6 +611,7 @@ async function exportEfecto() {
   const steps = ['vertical'];
   if (silenceOn) steps.push('silencio');
   if (effect !== 'ninguno') steps.push('efecto');
+  if (state.filter !== 'original') steps.push('filtro');
   if (subOn && effect !== 'irvenir') steps.push('subtitulos');
   steps.push('final');
   stepTotal = steps.length; stepIdx = 0;
@@ -584,9 +626,9 @@ async function exportEfecto() {
 
   setStep('Poniendo tu video en vertical 9:16…');
   logLines = [];
-  await normalize('entrada.mp4', 'norm.mp4');
+  await normalize('entrada.mp4', 'norm.mp4', state.speed);
   let cur = 'norm.mp4';
-  state.workDuration = state.mainDuration;
+  state.workDuration = state.mainDuration / state.speed;
   // El registro de la conversión ya dice si el video trae audio.
   const hasAudio = logLines.some((l) => l.includes('Audio:'));
 
@@ -606,7 +648,7 @@ async function exportEfecto() {
   if (effect === 'burbuja') {
     setStep('Poniendo las letras burbuja…');
     const lines = [$('burbuja-1').value, $('burbuja-2').value, $('burbuja-3').value];
-    await applyBubble(cur, 'efecto.mp4', lines);
+    await applyBubble(cur, 'efecto.mp4', lines, { size: state.textSize, pos: state.textPos });
     cur = 'efecto.mp4';
   } else if (effect === 'letra') {
     setStep('Armando la letra animada…');
@@ -624,6 +666,12 @@ async function exportEfecto() {
     setStep('Poniendo el tono cine…');
     await applyCine(cur, 'efecto.mp4');
     cur = 'efecto.mp4';
+  }
+
+  if (state.filter !== 'original') {
+    setStep('Poniendo el filtro…');
+    await applyFilter(cur, 'filtro.mp4', state.filter);
+    cur = 'filtro.mp4';
   }
 
   let assFile = null, subLines = null;
@@ -737,7 +785,7 @@ async function exportPlantilla() {
   if (musicName) {
     setStep('Añadiendo la música…');
     await runFFmpeg(['-i', 'plantilla.mp4', '-i', musicName, '-filter_complex',
-      `[1:a]volume=${MUSIC_VOLUME_SOLO},aloop=loop=-1:size=2e+09,atrim=0:${totalDur.toFixed(2)}[aout]`,
+      `[1:a]volume=${musicVolumeSolo()},aloop=loop=-1:size=2e+09,atrim=0:${totalDur.toFixed(2)}[aout]`,
       '-map', '0:v', '-map', '[aout]',
       '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
       '-movflags', '+faststart', 'salida.mp4']);
@@ -822,12 +870,17 @@ function buildSlots() {
   refreshExportButton();
 }
 
-function setMode(mode) {
-  state.mode = mode;
-  ui.tabEfecto.classList.toggle('on', mode === 'efecto');
-  ui.tabPlantilla.classList.toggle('on', mode === 'plantilla');
-  ui.panelEfecto.classList.toggle('oculto', mode !== 'efecto');
-  ui.panelPlantilla.classList.toggle('oculto', mode !== 'plantilla');
+/* Abre un panel de la barra de herramientas. "Plantilla" cambia el modo;
+ * los demás paneles trabajan en modo efecto. */
+function openPanel(name) {
+  const panels = {
+    efectos: ui.panelEfecto, texto: $('panel-texto'), audio: $('panel-audio'),
+    filtros: $('panel-filtros'), velocidad: $('panel-velocidad'),
+    subtitulos: $('panel-subtitulos'), plantilla: ui.panelPlantilla,
+  };
+  Object.entries(panels).forEach(([k, el]) => el.classList.toggle('oculto', k !== name));
+  document.querySelectorAll('#toolbar button').forEach((b) => b.classList.toggle('on', b.dataset.panel === name));
+  state.mode = name === 'plantilla' ? 'plantilla' : 'efecto';
   refreshExportButton();
 }
 
@@ -837,12 +890,27 @@ function setEffect(name) {
   ui.opBurbuja.classList.toggle('oculto', name !== 'burbuja');
   ui.opLetra.classList.toggle('oculto', name !== 'letra');
   ui.avisoIrvenir.classList.toggle('oculto', name !== 'irvenir');
+  if (ui.textoHint) ui.textoHint.classList.toggle('oculto', name === 'burbuja' || name === 'letra');
+}
+
+/* Grupo de botones donde solo uno queda elegido (tamaño, posición, etc.). */
+function wireSeg(id, key, cb) {
+  const el = $(id);
+  el.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    el.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+    cb(b.dataset[key]);
+  }));
 }
 
 /* ---------------- arranque ---------------- */
-ui.tabEfecto.addEventListener('click', () => setMode('efecto'));
-ui.tabPlantilla.addEventListener('click', () => setMode('plantilla'));
+document.querySelectorAll('#toolbar button').forEach((b) => b.addEventListener('click', () => openPanel(b.dataset.panel)));
 document.querySelectorAll('#efectos button').forEach((b) => b.addEventListener('click', () => setEffect(b.dataset.efecto)));
+wireSeg('texto-tam', 'tam', (v) => { state.textSize = v; });
+wireSeg('texto-pos', 'pos', (v) => { state.textPos = v; });
+wireSeg('musica-vol', 'vol', (v) => { state.musicVol = v; });
+wireSeg('voz-vol', 'voz', (v) => { state.voiceVol = v; });
+wireSeg('filtros', 'filtro', (v) => { state.filter = v; });
+wireSeg('velocidad', 'vel', (v) => { state.speed = parseFloat(v); });
 
 ui.videoInput.addEventListener('change', async (ev) => {
   const f = ev.target.files[0];
@@ -858,10 +926,11 @@ ui.videoInput.addEventListener('change', async (ev) => {
     ui.videoInfo.textContent = `${f.name} · ${fmtSeg(meta.duration)} · ${(f.size / 1048576).toFixed(1)} MB`;
     ui.preview.src = URL.createObjectURL(f);
     ui.preview.style.display = 'block';
-    ui.btnVideo.classList.add('sel');
-    ui.btnVideo.textContent = '📹 Cambiar video';
-    /* Bajar al paso 2 para que los efectos queden a la vista. */
-    document.getElementById('panel-efecto').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    ui.emptyState.style.display = 'none';
+    ui.btnVideo2.classList.remove('oculto');
+    ui.timelineFill.style.width = Math.min(100, (meta.duration / 60) * 100) + '%';
+    /* Bajar a las herramientas para que queden a la vista. */
+    document.getElementById('paneles').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
     ui.videoInfo.textContent = e.message;
     state.mainFile = null;
@@ -875,7 +944,7 @@ ui.musicInput.addEventListener('change', (ev) => {
   state.musicFile = f;
   ui.musicaInfo.textContent = `Música: ${f.name}`;
   ui.btnMusica.classList.add('sel');
-  ui.btnMusica.textContent = '🎵 Cambiar música';
+  ui.btnMusica.textContent = 'Cambiar música';
 });
 
 ui.tplInput.addEventListener('change', async (ev) => {
@@ -915,11 +984,14 @@ ui.btnOtro.addEventListener('click', () => {
   state.mainFile = null; state.musicFile = null;
   ui.videoInput.value = ''; ui.musicInput.value = '';
   ui.preview.style.display = 'none'; ui.preview.removeAttribute('src');
-  ui.videoInfo.textContent = 'Videos cortos funcionan mejor (menos de 1 minuto y menos de 250 MB).';
-  ui.btnVideo.classList.remove('sel'); ui.btnVideo.textContent = '📹 Elegir video de la galería';
-  ui.btnMusica.classList.remove('sel'); ui.btnMusica.textContent = '🎵 Elegir música de fondo';
+  ui.emptyState.style.display = 'block';
+  ui.btnVideo2.classList.add('oculto');
+  ui.timelineFill.style.width = '0%';
+  ui.videoInfo.textContent = 'Sin video todavía.';
+  ui.btnMusica.classList.remove('sel'); ui.btnMusica.textContent = 'Elegir música de fondo';
   ui.musicaInfo.textContent = 'Se mezcla bajita para no tapar tu voz. Si la canción es más corta que el video, se repite.';
   buildSlots();
+  openPanel('efectos');
   refreshExportButton();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 });

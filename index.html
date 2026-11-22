@@ -4,182 +4,275 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Editor Murillo's</title>
-<meta name="description" content="Edita tus videos de Murillo's Pizza en tu teléfono: letras burbuja, letra animada, ir y venir, tono cine, subtítulos y música.">
-<meta name="theme-color" content="#FFCC00">
+<meta name="description" content="Edita tus videos de Murillo's Pizza en tu teléfono: letras burbuja, letra animada, ir y venir, tono cine, filtros, velocidad, subtítulos y música.">
+<meta name="theme-color" content="#0d0d0d">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <style>
-  :root{ --amarillo:#FFCC00; --negro:#111; --gris:#f4f4f4; --borde:#ddd; }
+  :root{ --amarillo:#FFCC00; --negro:#0d0d0d; --panel:#1c1c1e; --panel2:#2c2c2e; --borde:#3a3a3c; --texto:#f5f5f5; --muted:#a1a1a6; }
   *{ box-sizing:border-box; }
-  body{ margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; background:#fff; color:var(--negro); font-size:17px; line-height:1.45; }
-  header{ background:var(--negro); color:#fff; padding:18px 16px 14px; text-align:center; position:sticky; top:0; z-index:10; }
-  header h1{ margin:0; font-size:26px; letter-spacing:.5px; }
-  header h1 span{ color:var(--amarillo); }
-  header p{ margin:4px 0 0; font-size:14px; color:#ccc; }
-  main{ max-width:640px; margin:0 auto; padding:16px 16px 48px; }
-  h2{ font-size:20px; margin:28px 0 10px; }
-  h2 .num{ display:inline-block; background:var(--amarillo); border-radius:50%; width:30px; height:30px; line-height:30px; text-align:center; font-size:18px; margin-right:8px; }
-  .card{ background:var(--gris); border:1px solid var(--borde); border-radius:14px; padding:14px; margin:10px 0; }
-  .hint{ font-size:14px; color:#555; margin:6px 0 0; }
-  .warn{ font-size:14px; color:#7a5200; background:#fff6d6; border:1px solid #ffe27a; border-radius:10px; padding:10px; margin:10px 0; }
-  label.filebtn, button.big{ display:block; width:100%; padding:16px; font-size:19px; font-weight:700; text-align:center; border-radius:14px; border:2px solid var(--negro); background:#fff; color:var(--negro); cursor:pointer; margin:8px 0; }
-  label.filebtn:active, button.big:active{ transform:scale(.98); }
-  label.filebtn.sel{ background:#fff8d1; border-color:#c9a400; }
-  button.big.amarillo{ background:var(--amarillo); border-color:var(--negro); }
-  button.big:disabled{ opacity:.45; cursor:default; }
-  input[type=file]{ display:none; }
-  .tabs{ display:flex; gap:10px; margin:10px 0; }
-  .tabs button{ flex:1; padding:15px 6px; font-size:18px; font-weight:700; border-radius:14px; border:2px solid var(--negro); background:#fff; cursor:pointer; }
-  .tabs button.on{ background:var(--negro); color:var(--amarillo); }
-  .efectos{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-  .efectos button{ padding:14px 8px; font-size:16px; font-weight:700; border-radius:12px; border:2px solid var(--negro); background:#fff; cursor:pointer; min-height:64px; }
-  .efectos button.on{ background:var(--amarillo); }
-  .efectos button small{ display:block; font-weight:400; font-size:13px; margin-top:3px; }
-  .fila{ display:flex; align-items:center; gap:10px; background:#fff; border:1px solid var(--borde); border-radius:12px; padding:12px; margin:8px 0; }
-  .fila input[type=checkbox]{ width:26px; height:26px; accent-color:var(--amarillo); flex:none; }
-  .fila .t{ font-weight:700; }
-  .fila .d{ font-size:14px; color:#555; }
-  input[type=text]{ width:100%; padding:13px; font-size:17px; border:2px solid var(--borde); border-radius:10px; margin:6px 0; }
-  input[type=text]:focus{ border-color:var(--negro); outline:none; }
-  #preview{ width:100%; max-height:420px; border-radius:12px; background:#000; display:none; margin:10px 0; }
-  #progreso{ display:none; margin:14px 0; }
-  #barra{ width:100%; height:22px; background:#eee; border-radius:11px; overflow:hidden; border:1px solid var(--borde); }
-  #relleno{ height:100%; width:0%; background:var(--amarillo); transition:width .3s; }
-  #estado{ font-size:15px; margin:8px 0; min-height:22px; }
-  #resultado{ display:none; }
-  #resultado video{ width:100%; border-radius:12px; background:#000; }
-  .slot{ background:#fff; border:1px solid var(--borde); border-radius:12px; padding:12px; margin:8px 0; }
-  .slot .t{ font-weight:700; }
-  .slot .d{ font-size:14px; color:#555; }
-  .slot label.filebtn{ padding:12px; font-size:16px; margin:8px 0 0; }
-  .slot img, .slot video{ width:100%; border-radius:8px; margin-top:8px; display:none; }
-  footer{ text-align:center; font-size:13px; color:#777; padding:0 16px 24px; max-width:640px; margin:0 auto; }
+  body{ margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; background:var(--negro); color:var(--texto); font-size:15px; line-height:1.4; }
+  /* Barra superior estilo CapCut: título a la izquierda, Exportar a la derecha. */
+  header{ background:#000; padding:10px 14px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:30; border-bottom:1px solid #222; }
+  header .logo{ font-size:18px; font-weight:800; letter-spacing:.3px; }
+  header .logo span{ color:var(--amarillo); }
+  #btn-exportar{ background:var(--amarillo); color:#111; border:0; border-radius:20px; font-size:15px; font-weight:800; padding:9px 18px; cursor:pointer; }
+  #btn-exportar:disabled{ opacity:.4; cursor:default; }
+  main{ max-width:640px; margin:0 auto; padding:12px 12px 110px; }
+  .card{ background:var(--panel); border:1px solid var(--borde); border-radius:14px; padding:12px; margin:10px 0; }
+  .hint{ font-size:13px; color:var(--muted); margin:6px 0 0; }
+  .warn{ font-size:13px; color:#ffd479; background:#3a2f00; border:1px solid #6b5600; border-radius:10px; padding:10px; margin:10px 0; }
   .oculto{ display:none !important; }
+  /* Carga del motor */
+  #carga{ text-align:center; }
+  #carga-titulo{ font-weight:700; }
+  #barra{ width:100%; height:8px; background:#333; border-radius:4px; overflow:hidden; margin-top:8px; }
+  #relleno{ height:100%; width:0%; background:var(--amarillo); }
+  /* Vista previa */
+  #preview-wrap{ background:#000; border-radius:14px; overflow:hidden; min-height:280px; display:flex; align-items:center; justify-content:center; }
+  #preview{ width:100%; max-height:52vh; display:none; background:#000; }
+  #empty-state{ text-align:center; padding:36px 16px; }
+  #empty-state .big-emoji{ font-size:44px; }
+  #empty-state p{ color:var(--muted); font-size:14px; margin:8px 0 16px; }
+  label.filebtn{ display:inline-block; padding:13px 20px; font-size:16px; font-weight:700; text-align:center; border-radius:24px; border:0; background:var(--amarillo); color:#111; cursor:pointer; }
+  label.filebtn.sel{ background:#fff8d1; }
+  label.filebtn.mini{ padding:8px 14px; font-size:13px; }
+  input[type=file]{ display:none; }
+  /* Línea de tiempo sencilla: nombre, duración y barra del clip. */
+  #timeline{ margin:10px 0 4px; }
+  #timeline-track{ height:8px; background:#333; border-radius:4px; overflow:hidden; }
+  #timeline-fill{ display:block; height:100%; width:0%; background:var(--amarillo); }
+  #timeline-info{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:6px; font-size:13px; color:var(--muted); }
+  #video-info{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* Progreso de exportación y resultado */
+  #progreso{ display:none; margin:12px 0; }
+  #barra2{ width:100%; height:10px; background:#333; border-radius:5px; overflow:hidden; }
+  #relleno2{ height:100%; width:0%; background:var(--amarillo); transition:width .3s; }
+  #estado{ font-size:14px; margin:8px 0; min-height:20px; }
+  #resultado{ display:none; }
+  #resultado video{ width:100%; border-radius:12px; background:#000; max-height:52vh; }
+  #resultado .acciones{ display:flex; gap:10px; margin-top:10px; }
+  #resultado .acciones a, #resultado .acciones button{ flex:1; padding:13px 6px; font-size:15px; font-weight:700; text-align:center; border-radius:12px; border:0; cursor:pointer; text-decoration:none; }
+  #out-link{ background:var(--amarillo); color:#111; display:block; }
+  #btn-compartir{ background:var(--panel2); color:#fff; }
+  #btn-otro{ background:var(--panel2); color:#fff; width:100%; margin-top:10px; padding:13px; font-size:15px; font-weight:700; border-radius:12px; border:0; }
+  /* Paneles de herramientas */
+  .panel h3{ margin:2px 0 10px; font-size:15px; }
+  .panel h3 small{ display:block; font-weight:400; color:var(--muted); font-size:12px; margin-top:2px; }
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .grid2 button, .seg button{ padding:11px 6px; font-size:14px; font-weight:700; border-radius:12px; border:1px solid var(--borde); background:var(--panel2); color:var(--texto); cursor:pointer; min-height:52px; }
+  .grid2 button small{ display:block; font-weight:400; font-size:12px; color:var(--muted); margin-top:2px; }
+  .grid2 button.on, .seg button.on{ background:var(--amarillo); color:#111; border-color:var(--amarillo); }
+  .grid2 button.on small{ color:#5c4d00; }
+  .seg{ display:flex; gap:8px; margin:8px 0; }
+  .seg button{ flex:1; min-height:44px; padding:9px 4px; }
+  .seg-label{ font-size:13px; font-weight:700; margin:12px 0 2px; }
+  input[type=text]{ width:100%; padding:11px; font-size:15px; border:1px solid var(--borde); border-radius:10px; margin:5px 0; background:#111; color:#fff; }
+  input[type=text]:focus{ border-color:var(--amarillo); outline:none; }
+  .fila{ display:flex; align-items:center; gap:10px; background:var(--panel2); border:1px solid var(--borde); border-radius:12px; padding:11px; margin:8px 0; }
+  .fila input[type=checkbox]{ width:24px; height:24px; accent-color:var(--amarillo); flex:none; }
+  .fila .t{ font-weight:700; font-size:14px; }
+  .fila .d{ font-size:12px; color:var(--muted); }
+  .slot{ background:var(--panel2); border:1px solid var(--borde); border-radius:12px; padding:11px; margin:8px 0; }
+  .slot .t{ font-weight:700; font-size:14px; }
+  .slot .d{ font-size:12px; color:var(--muted); }
+  .slot label.filebtn{ padding:10px 14px; font-size:14px; margin:8px 0 0; }
+  .slot img, .slot video{ width:100%; border-radius:8px; margin-top:8px; display:none; }
+  /* Barra de herramientas inferior estilo CapCut */
+  #toolbar{ position:fixed; left:0; right:0; bottom:0; z-index:30; background:#000; border-top:1px solid #222; display:flex; overflow-x:auto; padding:6px 4px calc(8px + env(safe-area-inset-bottom)); scrollbar-width:none; }
+  #toolbar::-webkit-scrollbar{ display:none; }
+  #toolbar button{ flex:1 0 auto; min-width:64px; background:none; border:0; color:#ccc; font-size:12px; padding:6px 4px; cursor:pointer; }
+  #toolbar button .ic{ display:block; font-size:22px; line-height:1.1; }
+  #toolbar button.on{ color:var(--amarillo); }
+  footer{ text-align:center; font-size:12px; color:#777; padding:8px 16px 16px; }
+  #registro summary{ font-size:13px; cursor:pointer; }
+  #log-texto{ white-space:pre-wrap; word-break:break-word; font-size:12px; max-height:220px; overflow:auto; color:#ddd; }
 </style>
 </head>
 <body>
 <header>
-  <h1>Editor <span>Murillo's</span></h1>
-  <p>Tus videos listos para Instagram, en tu teléfono</p>
+  <div class="logo">Editor <span>Murillo's</span></div>
+  <button id="btn-exportar" type="button" disabled>Exportar ⬆</button>
 </header>
 
 <main>
   <div id="carga" class="card">
-    <strong id="carga-titulo">Preparando el editor…</strong>
-    <p class="hint" id="carga-texto">La primera vez descarga el motor de video (unos 30 MB). Solo pasa una vez.</p>
+    <div id="carga-titulo">Preparando el editor…</div>
+    <div class="hint" id="carga-texto">La primera vez descarga el motor de video (unos 30 MB). Solo pasa una vez.</div>
     <div id="barra"><div id="relleno"></div></div>
   </div>
 
-  <!-- PASO 1 -->
-  <h2><span class="num">1</span>Elige tu video</h2>
-  <div class="card">
-    <label class="filebtn" id="btn-video" for="videoInput">📹 Elegir video de la galería</label>
-    <input type="file" id="videoInput" accept="video/*">
-    <p class="hint" id="video-info">Videos cortos funcionan mejor (menos de 1 minuto y menos de 250 MB).</p>
+  <!-- Vista previa -->
+  <div id="preview-wrap">
+    <div id="empty-state">
+      <div class="big-emoji">📹</div>
+      <p>Elige un video de tu galería para empezar.<br>Videos cortos funcionan mejor (menos de 1 minuto y menos de 250 MB).</p>
+      <label class="filebtn" id="btn-video" for="videoInput">Elegir video</label>
+      <input type="file" id="videoInput" accept="video/*">
+    </div>
     <video id="preview" playsinline controls></video>
   </div>
 
-  <!-- PASO 2 -->
-  <h2><span class="num">2</span>Elige efecto o plantilla</h2>
-  <div class="tabs">
-    <button id="tab-efecto" class="on" type="button">✨ Efecto</button>
-    <button id="tab-plantilla" type="button">🎬 Plantilla</button>
+  <!-- Línea de tiempo -->
+  <div id="timeline">
+    <div id="timeline-track"><span id="timeline-fill"></span></div>
+    <div id="timeline-info">
+      <span id="video-info">Sin video todavía.</span>
+      <label class="filebtn mini oculto" id="btn-video-2" for="videoInput">Cambiar video</label>
+    </div>
   </div>
 
-  <!-- Panel efectos -->
-  <div id="panel-efecto">
-    <div class="efectos" id="efectos">
-      <button type="button" data-efecto="ninguno">Sin efecto<small>Solo subtítulos, silencios y música</small></button>
-      <button type="button" data-efecto="burbuja" class="on">Letras burbuja<small>Texto grande amarillo con borde negro</small></button>
-      <button type="button" data-efecto="letra">Letra animada<small>Frases que aparecen y final gigante</small></button>
-      <button type="button" data-efecto="irvenir">Ir y venir<small>El clip va y regresa, estilo Ren</small></button>
-      <button type="button" data-efecto="cine">Tono cine<small>Colores de película</small></button>
+  <!-- Progreso y resultado -->
+  <div id="progreso">
+    <div id="barra2"><div id="relleno2"></div></div>
+    <p id="estado">Trabajando…</p>
+  </div>
+  <div id="resultado">
+    <video id="out-video" playsinline controls></video>
+    <div class="acciones">
+      <a id="out-link" download="murillos-pizza-editado.mp4" href="#">Guardar video</a>
+      <button id="btn-compartir" type="button">Compartir</button>
+    </div>
+    <button id="btn-otro" type="button">Editar otro video</button>
+  </div>
+  <details id="registro" class="card" style="display:none">
+    <summary>Registro técnico (por si algo falla)</summary>
+    <pre id="log-texto"></pre>
+  </details>
+
+  <!-- Paneles de herramientas -->
+  <div id="paneles">
+    <div id="panel-efecto" class="card panel">
+      <h3>✨ Efectos <small>Elige un estilo para tu video</small></h3>
+      <div class="grid2" id="efectos">
+        <button type="button" data-efecto="ninguno">Sin efecto<small>Solo subtítulos, silencios y música</small></button>
+        <button type="button" data-efecto="burbuja" class="on">Letras burbuja<small>Texto grande amarillo con borde negro</small></button>
+        <button type="button" data-efecto="letra">Letra animada<small>Frases que aparecen y final gigante</small></button>
+        <button type="button" data-efecto="irvenir">Ir y venir<small>El clip va y regresa, estilo Ren</small></button>
+        <button type="button" data-efecto="cine">Tono cine<small>Colores de película</small></button>
+      </div>
+      <div id="aviso-irvenir" class="warn oculto">Con "Ir y venir" no hay subtítulos: el video va al revés por trozos y las palabras ya no coinciden con tu voz. La música sí se puede añadir.</div>
     </div>
 
-    <div id="op-burbuja" class="card">
-      <strong>Texto en letras burbuja</strong>
-      <p class="hint">Escribe 1 a 3 líneas. Abajo se añade solo: "Pide por WhatsApp 999 990 2960".</p>
-      <input type="text" id="burbuja-1" maxlength="30" placeholder="Línea 1 — ej. HOY EN MULSAY" value="HOY EN MULSAY">
-      <input type="text" id="burbuja-2" maxlength="30" placeholder="Línea 2 (opcional)">
-      <input type="text" id="burbuja-3" maxlength="30" placeholder="Línea 3 (opcional)">
+    <div id="panel-texto" class="card panel oculto">
+      <h3>🔤 Texto <small>Lo que sale escrito en tu video</small></h3>
+      <div id="texto-hint" class="hint">Primero elige "Letras burbuja" o "Letra animada" en Efectos para escribir el texto.</div>
+      <div id="op-burbuja">
+        <p class="hint">Escribe 1 a 3 líneas. Abajo se añade solo: "Pide por WhatsApp 999 990 2960".</p>
+        <input type="text" id="burbuja-1" maxlength="30" placeholder="Línea 1 — ej. HOY EN MULSAY" value="HOY EN MULSAY">
+        <input type="text" id="burbuja-2" maxlength="30" placeholder="Línea 2 (opcional)">
+        <input type="text" id="burbuja-3" maxlength="30" placeholder="Línea 3 (opcional)">
+        <div class="seg-label">Tamaño de las letras</div>
+        <div class="seg" id="texto-tam">
+          <button type="button" data-tam="chico">Chico</button>
+          <button type="button" data-tam="mediano" class="on">Mediano</button>
+          <button type="button" data-tam="grande">Grande</button>
+        </div>
+        <div class="seg-label">Posición del texto</div>
+        <div class="seg" id="texto-pos">
+          <button type="button" data-pos="arriba" class="on">Arriba</button>
+          <button type="button" data-pos="centro">Centro</button>
+          <button type="button" data-pos="abajo">Abajo</button>
+        </div>
+      </div>
+      <div id="op-letra" class="oculto">
+        <p class="hint">Cada frase aparece una tras otra. Al final, "MURILLO'S PIZZA" crece hasta llenar la pantalla y sale el WhatsApp.</p>
+        <input type="text" id="letra-1" maxlength="30" placeholder="Frase 1 — ej. HORNO DE PIEDRA" value="HORNO DE PIEDRA">
+        <input type="text" id="letra-2" maxlength="30" placeholder="Frase 2 — ej. MASA NAPOLITANA" value="MASA NAPOLITANA">
+        <input type="text" id="letra-3" maxlength="30" placeholder="Frase 3 (opcional)">
+        <input type="text" id="letra-4" maxlength="30" placeholder="Frase 4 (opcional)">
+      </div>
     </div>
 
-    <div id="op-letra" class="card oculto">
-      <strong>Frases de la letra animada</strong>
-      <p class="hint">Cada frase aparece una tras otra. Al final, "MURILLO'S PIZZA" crece hasta llenar la pantalla y sale el WhatsApp.</p>
-      <input type="text" id="letra-1" maxlength="30" placeholder="Frase 1 — ej. HORNO DE PIEDRA" value="HORNO DE PIEDRA">
-      <input type="text" id="letra-2" maxlength="30" placeholder="Frase 2 — ej. MASA NAPOLITANA" value="MASA NAPOLITANA">
-      <input type="text" id="letra-3" maxlength="30" placeholder="Frase 3 (opcional)">
-      <input type="text" id="letra-4" maxlength="30" placeholder="Frase 4 (opcional)">
+    <div id="panel-audio" class="card panel oculto">
+      <h3>🎵 Audio <small>Música de fondo y tu voz</small></h3>
+      <label class="filebtn" id="btn-musica" for="musicInput">Elegir música de fondo</label>
+      <input type="file" id="musicInput" accept="audio/*">
+      <p class="hint" id="musica-info">Se mezcla bajita para no tapar tu voz. Si la canción es más corta que el video, se repite.</p>
+      <div class="seg-label">Volumen de la música</div>
+      <div class="seg" id="musica-vol">
+        <button type="button" data-vol="baja">Bajita</button>
+        <button type="button" data-vol="media" class="on">Media</button>
+        <button type="button" data-vol="fuerte">Fuerte</button>
+      </div>
+      <div class="seg-label">Tu voz</div>
+      <div class="seg" id="voz-vol">
+        <button type="button" data-voz="silencio">Silenciada</button>
+        <button type="button" data-voz="normal" class="on">Normal</button>
+        <button type="button" data-voz="fuerte">Más fuerte</button>
+      </div>
     </div>
 
-    <div class="fila">
-      <input type="checkbox" id="chk-silencio" checked>
-      <div><div class="t">Quitar silencios</div><div class="d">Corta las pausas largas de tu voz.</div></div>
+    <div id="panel-filtros" class="card panel oculto">
+      <h3>🎨 Filtros <small>Colores de tu video</small></h3>
+      <div class="grid2" id="filtros">
+        <button type="button" data-filtro="original" class="on">Original<small>Sin cambios</small></button>
+        <button type="button" data-filtro="calido">Cálido<small>Tonos dorados, como el horno</small></button>
+        <button type="button" data-filtro="frio">Frío<small>Tonos azules</small></button>
+        <button type="button" data-filtro="vivo">Vivo<small>Colores más intensos</small></button>
+        <button type="button" data-filtro="byn">Blanco y negro<small>Clásico</small></button>
+      </div>
+      <p class="hint">Los filtros se suman al efecto que elijas (por ejemplo, Letras burbuja + Vivo).</p>
     </div>
-    <div class="fila">
-      <input type="checkbox" id="chk-subs" checked>
-      <div><div class="t">Subtítulos automáticos</div><div class="d">Escribe lo que dices, en letras grandes. La primera vez descarga el modelo de voz (unos 40 MB) y tarda un rato. Puedes desmarcarlo para ir más rápido.</div></div>
+
+    <div id="panel-velocidad" class="card panel oculto">
+      <h3>⏩ Velocidad <small>Qué tan rápido se mueve tu video</small></h3>
+      <div class="seg" id="velocidad">
+        <button type="button" data-vel="0.5">0.5×</button>
+        <button type="button" data-vel="1" class="on">1×</button>
+        <button type="button" data-vel="1.5">1.5×</button>
+        <button type="button" data-vel="2">2×</button>
+      </div>
+      <p class="hint">1× es la velocidad normal. Con 0.5× el video va lento y con 2× va al doble. Los subtítulos y la música se adaptan solos.</p>
     </div>
-    <div class="card">
-      <strong>Palabra en amarillo (opcional)</strong>
+
+    <div id="panel-subtitulos" class="card panel oculto">
+      <h3>💬 Voz y subtítulos <small>Lo que dices, escrito en grande</small></h3>
+      <div class="fila">
+        <input type="checkbox" id="chk-silencio" checked>
+        <div><div class="t">Quitar silencios</div><div class="d">Corta las pausas largas de tu voz.</div></div>
+      </div>
+      <div class="fila">
+        <input type="checkbox" id="chk-subs" checked>
+        <div><div class="t">Subtítulos automáticos</div><div class="d">Escribe lo que dices, en letras grandes. La primera vez descarga el modelo de voz (unos 40 MB) y tarda un rato. Puedes desmarcarlo para ir más rápido.</div></div>
+      </div>
+      <div class="seg-label">Palabra en amarillo (opcional)</div>
       <input type="text" id="keyword" maxlength="20" placeholder="Ej. napolitana" value="napolitana">
       <p class="hint">Esa palabra saldrá en amarillo en los subtítulos.</p>
     </div>
-    <div id="aviso-irvenir" class="warn oculto">Con "Ir y venir" no hay subtítulos: el video va al revés por trozos y las palabras ya no coinciden con tu voz. La música sí se puede añadir.</div>
-  </div>
 
-  <!-- Panel plantillas -->
-  <div id="panel-plantilla" class="oculto">
-    <div class="card">
+    <div id="panel-plantilla" class="card panel oculto">
+      <h3>🎬 Plantilla <small>Varios clips en un solo video</small></h3>
       <strong>Plantilla: Estilo Ren Director</strong>
       <p class="hint">4 lugares para clips (5 s, 4.4 s, 4 s y 5 s) con efecto ir y venir y tono cine, y tarjeta final negra de 3.5 s. Total: 21.9 segundos. Cada lugar acepta video o foto (las fotos se acercan poco a poco).</p>
       <div id="slots"></div>
-      <label class="filebtn" for="tplInput">📄 Cargar otra plantilla (archivo .json)</label>
+      <label class="filebtn" for="tplInput">Cargar otra plantilla (archivo .json)</label>
       <input type="file" id="tplInput" accept=".json,application/json">
       <p class="hint" id="tpl-info"></p>
-    </div>
-    <div class="card">
-      <strong>Tarjeta final</strong>
+      <div class="seg-label">Tarjeta final</div>
       <input type="text" id="cierre-1" maxlength="30" value="MURILLO'S PIZZA">
       <input type="text" id="cierre-2" maxlength="30" value="MÉRIDA 2026">
       <input type="text" id="cierre-3" maxlength="40" value="Pide por WhatsApp 999 990 2960">
     </div>
   </div>
 
-  <!-- PASO 3 -->
-  <h2><span class="num">3</span>Música (opcional)</h2>
-  <div class="card">
-    <label class="filebtn" id="btn-musica" for="musicInput">🎵 Elegir música de fondo</label>
-    <input type="file" id="musicInput" accept="audio/*">
-    <p class="hint" id="musica-info">Se mezcla bajita para no tapar tu voz. Si la canción es más corta que el video, se repite.</p>
-  </div>
-
-  <!-- EXPORTAR -->
-  <h2><span class="num">4</span>Exportar</h2>
-  <button class="big amarillo" id="btn-exportar" type="button" disabled>⬇️ Exportar video</button>
-  <p class="hint">Sale en vertical 9:16 (1080×1920), listo para Instagram y TikTok.</p>
-  <div id="progreso">
-    <div id="barra2" style="width:100%;height:22px;background:#eee;border-radius:11px;overflow:hidden;border:1px solid var(--borde);"><div id="relleno2" style="height:100%;width:0%;background:var(--amarillo);transition:width .3s;"></div></div>
-    <p id="estado">Trabajando…</p>
-  </div>
-  <div id="resultado">
-    <video id="out-video" playsinline controls></video>
-    <a id="out-link" class="filebtn" style="background:var(--amarillo);text-decoration:none;" download="murillos-pizza-editado.mp4" href="#">⬇️ Guardar video</a>
-    <button class="big" id="btn-compartir" type="button">📤 Compartir</button>
-    <button class="big" id="btn-otro" type="button">🔄 Editar otro video</button>
-  </div>
-  <details id="registro" class="card" style="display:none">
-    <summary>Registro técnico (por si algo falla)</summary>
-    <pre id="log-texto" style="white-space:pre-wrap;word-break:break-word;font-size:12px;max-height:220px;overflow:auto"></pre>
-  </details>
+  <footer>
+    Todo se procesa en tu teléfono, nada se sube a internet.<br>
+    Editor Murillo's · Murillo's Pizza, Mérida
+  </footer>
 </main>
 
-<footer>
-  Todo se procesa en tu teléfono, nada se sube a internet.<br>
-  Editor Murillo's · Murillo's Pizza, Mérida
-</footer>
+<!-- Barra de herramientas inferior estilo CapCut -->
+<nav id="toolbar">
+  <button type="button" data-panel="efectos" class="on"><span class="ic">✨</span>Efectos</button>
+  <button type="button" data-panel="texto"><span class="ic">🔤</span>Texto</button>
+  <button type="button" data-panel="audio"><span class="ic">🎵</span>Audio</button>
+  <button type="button" data-panel="filtros"><span class="ic">🎨</span>Filtros</button>
+  <button type="button" data-panel="velocidad"><span class="ic">⏩</span>Velocidad</button>
+  <button type="button" data-panel="subtitulos"><span class="ic">💬</span>Subtítulos</button>
+  <button type="button" data-panel="plantilla"><span class="ic">🎬</span>Plantillas</button>
+</nav>
 
 <script src="app.js" type="module"></script>
 </body>
