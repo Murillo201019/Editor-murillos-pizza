@@ -470,8 +470,13 @@ function bubblePasses(lines, startY, fontSize, prefix) {
   const parts = [];
   const bwBlack = Math.round(fontSize * 0.14);
   const bwWhite = Math.round(fontSize * 0.08);
+  // Separación entre líneas: 1.6x (antes 1.3x). Titan One es muy pesada
+  // y con el filete negro las líneas se veían muy juntas. Además el bloque
+  // no debe bajar hasta el pie de WhatsApp (y=1480).
+  const spacing = Math.round(fontSize * 1.6);
+  if (lines.length > 1) startY = Math.min(startY, 1440 - ((lines.length - 1) * spacing + fontSize));
   lines.forEach((line, i) => {
-    const y = startY + i * Math.round(fontSize * 1.3);
+    const y = startY + i * spacing;
     const file = `/${prefix}_${i}.txt`;
     parts.push({ file, text: line });
     parts.push(`drawtext=fontfile=${font}:textfile=${file}:fontsize=${fontSize}:fontcolor=black:borderw=${bwBlack}:bordercolor=black:x=(w-text_w)/2:y=${y}`);
@@ -508,7 +513,8 @@ async function applyBubble(input, output, lines, opts) {
 async function applyLyric(input, output, lines, duration) {
   const clean = lines.map((l) => l.trim()).filter(Boolean).slice(0, 4);
   const fontSize = clean.some((l) => l.length > 16) ? 80 : 96;
-  const blockH = clean.length * Math.round(fontSize * 1.25);
+  const spacing = Math.round(fontSize * 1.6);
+  const blockH = clean.length * spacing;
   const y0 = Math.round((1920 - blockH) / 2) - 120;
   const parts = [];
   const font = bubbleFont();
@@ -516,7 +522,7 @@ async function applyLyric(input, output, lines, duration) {
   const bwWhite = Math.round(fontSize * 0.08);
   clean.forEach((line, i) => {
     const start = Math.min(0.3 + i * 1.0, Math.max(0.3, duration - 0.6));
-    const y = y0 + i * Math.round(fontSize * 1.25);
+    const y = y0 + i * spacing;
     const file = `/lyr_${i}.txt`;
     parts.push({ file, text: line });
     const en = `enable='between(t\\,${start.toFixed(2)}\\,${duration.toFixed(2)})'`;
@@ -914,9 +920,11 @@ function updatePreview() {
     const lines = [$('burbuja-1').value, $('burbuja-2').value, $('burbuja-3').value].map((l) => l.trim()).filter(Boolean).slice(0, 3);
     const base = state.textSize === 'chico' ? 80 : state.textSize === 'grande' ? 130 : 110;
     const fontSize = lines.some((l) => l.length > 14) ? Math.max(56, base - 22) : base;
-    const startY = state.textPos === 'centro' ? 800 : state.textPos === 'abajo' ? 1050 : 380;
+    let startY = state.textPos === 'centro' ? 800 : state.textPos === 'abajo' ? 1050 : 380;
+    const spacing = Math.round(fontSize * 1.6);
+    if (lines.length > 1) startY = Math.min(startY, 1440 - ((lines.length - 1) * spacing + fontSize));
     lines.forEach((line, i) => {
-      const y = startY + i * Math.round(fontSize * 1.3);
+      const y = startY + i * spacing;
       html += `<div class="pv-line" style="top:${(y / 1920 * 100).toFixed(1)}%;font-size:${Math.round(fontSize * scale)}px">${bubbleLineHTML(line, fontSize * scale)}</div>`;
     });
     html += `<div class="pv-line" style="top:77%;font-size:${Math.round(46 * scale)}px">${bubbleLineHTML(WHATSAPP, 46 * scale)}</div>`;
