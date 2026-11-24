@@ -1,6 +1,7 @@
-/* Editor Murillo's — v8 (vista previa fija arriba, errores con el paso
- * y la causa real, y liberación de memoria entre pasos para que los
- * videos pesados del teléfono no tumben la exportación).
+/* Editor Murillo's — v12 (v11: vista previa mide la escala sobre el
+ * video real; v12: plantilla "Libros leídos", collage de portadas que
+ * van apareciendo en oleadas sobre una foto de fondo, con el título
+ * en el centro, como el reel de referencia de @shelbae.marie).
  * Todo el proceso pasa en el teléfono: nada se sube a internet.
  * Motor de video: ffmpeg.wasm 0.12.10 (un solo hilo, sin COOP/COEP).
  * Subtítulos: @xenova/transformers 2.17.2, modelo Xenova/whisper-tiny.
@@ -23,6 +24,7 @@ const state = {
   musicFile: null,
   slots: [null, null, null, null],   // archivos por lugar de la plantilla
   template: null,           // definición de plantilla cargada
+  fondoFile: null,          // foto de fondo opcional (solo plantilla collage)
   workDuration: 0,          // duración del video en curso
   outBlob: null, outName: 'murillos-pizza-editado.mp4',
 };
@@ -43,6 +45,47 @@ const TEMPLATE_REN = {
 };
 state.template = TEMPLATE_REN;
 
+/* Plantilla integrada: Libros leídos (igual que
+ * ~/workspace/murillos-video-editor/plantillas/plantilla-libros-leidos.json).
+ * Collage de portadas sobre una foto de fondo: rejilla de 5 columnas x 6
+ * filas (30 portadas), que van apareciendo en espiral desde arriba a la
+ * izquierda, cada una con un pequeño zoom de 0,25 s; la última entra a
+ * los 5,6 s y el video dura 6,4 s, como el reel de referencia. El título
+ * va centrado encima. La foto de fondo es opcional (sin ella, fondo
+ * color crema). La música la pone el usuario aparte, como siempre. */
+const TEMPLATE_LIBROS = {
+  nombre: 'Libros leídos',
+  tipo: 'collage',
+  formato: '9:16', resolucion: '1080x1920', version: 1,
+  descripcion: 'Collage de portadas que van apareciendo en oleadas sobre una foto de fondo, con el título en el centro.',
+  duracion_segundos: 6.4,
+  titulo_lineas: ['Todo lo que he leído', '(hasta ahora)', 'este año'],
+  columnas: 5, filas: 6, portadas: 30,
+  fondo: { que_va: 'foto', opcional: true, ejemplo: 'Tu mesa con el Kindle y el café' },
+  clips: Array.from({ length: 30 }, (_, i) => ({ lugar: i + 1, que_va: 'foto', ejemplo: 'Portada ' + (i + 1) })),
+  musica: 'La que elijas (el video no tiene voz; se mezcla al volumen normal)',
+};
+
+/* Orden en que se llenan las celdas de la rejilla: anillos en espiral
+ * antihoraria empezando arriba a la izquierda (fila de arriba de
+ * izquierda a derecha, columna izquierda hacia abajo, fila de abajo de
+ * izquierda a derecha, columna derecha hacia arriba, y luego el anillo
+ * interior igual). Es el orden del reel de referencia: primero las
+ * filas de arriba, luego baja por la izquierda, se llena abajo y sube
+ * por la derecha; el centro queda para el final, detrás del título. */
+function spiralOrder(cols, rows) {
+  const order = [];
+  let top = 0, bottom = rows - 1, left = 0, right = cols - 1;
+  while (top <= bottom && left <= right) {
+    for (let c = left; c <= right; c++) order.push([c, top]);
+    for (let r = top + 1; r <= bottom; r++) order.push([left, r]);
+    if (top !== bottom) for (let c = left + 1; c <= right; c++) order.push([c, bottom]);
+    if (left !== right) for (let r = bottom - 1; r > top; r--) order.push([right, r]);
+    top++; bottom--; left++; right--;
+  }
+  return order;
+}
+
 /* ---------------- constantes ---------------- */
 /* Motor de video en local (mismo origen): el Worker de ffmpeg no se puede
  * cargar desde otro dominio (CDN) en GitHub Pages, por eso los archivos
@@ -61,6 +104,10 @@ const WASM_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmp
  * que las letras burbuja quedaban sin fuente y el video salía vacío. */
 const TITAN_URL = 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/titanone/TitanOne-Regular.ttf';
 const LATO_URL = 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/lato/Lato-Bold.ttf';
+/* Baloo 2 extrabold para el título del collage "Libros leídos": redonda
+ * y gruesa, como la del reel de referencia. Solo se usa en el canvas
+ * del título (woff2, no sirve para drawtext de ffmpeg). */
+const BALOO_URL = 'https://cdn.jsdelivr.net/fontsource/fonts/baloo-2@latest/latin-800-normal.woff2';
 const TRANSFORMERS_URL = 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js';
 const WHISPER_MODEL = 'Xenova/whisper-tiny';
 
@@ -90,6 +137,11 @@ const ui = {
   avisoIrvenir: $('aviso-irvenir'), textoHint: $('texto-hint'),
   chkSilencio: $('chk-silencio'), chkSubs: $('chk-subs'), keyword: $('keyword'),
   slots: $('slots'), tplInput: $('tplInput'), tplInfo: $('tpl-info'),
+  tplSwitch: $('tpl-switch'), tplDesc: $('tpl-desc'),
+  collageTools: $('collage-tools'), tituloLibros: $('titulo-libros'),
+  fondoInput: $('fondoInput'), fondoInfo: $('fondo-info'),
+  portadasInput: $('portadasInput'), collagePreview: $('collage-preview'),
+  cierreTools: $('cierre-tools'),
   cierre1: $('cierre-1'), cierre2: $('cierre-2'), cierre3: $('cierre-3'),
   btnMusica: $('btn-musica'), musicInput: $('musicInput'), musicaInfo: $('musica-info'),
   btnExportar: $('btn-exportar'), progreso: $('progreso'), relleno2: $('relleno2'),
@@ -259,6 +311,70 @@ async function makeEndCardPNG(principal, secundario, finalLine) {
   ctx.fillStyle = '#fff'; ctx.fillText(secundario, 540, 960);
   ctx.font = `${fitFont(ctx, finalLine, 950, 46)}px "Titan One", sans-serif`;
   ctx.fillStyle = '#FFCC00'; ctx.fillText(finalLine, 540, 1700);
+  return await new Promise((res) => c.toBlob(res, 'image/png'));
+}
+
+/* Baloo 2 extrabold para el título del collage (redonda y gruesa, como
+ * la del reel de referencia). Se baja de jsDelivr como woff2 y se carga
+ * en la página; si falla, el título se dibuja con Titan One. */
+let balooOK = false, balooTried = false;
+async function loadBalooForCanvas() {
+  if (balooOK) return true;
+  if (balooTried) return false;
+  balooTried = true;
+  if (document.fonts.check('800 100px "Baloo 2"')) { balooOK = true; return true; }
+  try {
+    const res = await fetch(BALOO_URL);
+    if (!res.ok) return false;
+    const buf = await res.arrayBuffer();
+    if (!buf.byteLength) return false;
+    const url = URL.createObjectURL(new Blob([buf], { type: 'font/woff2' }));
+    const face = new FontFace('Baloo 2', `url(${url})`, { weight: '800' });
+    await face.load(); document.fonts.add(face);
+    balooOK = true;
+    return true;
+  } catch (e) { return false; }
+}
+
+/* Estrella de 4 puntas (como las del reel) en (cx, cy), radio r. */
+function drawStar(ctx, cx, cy, r) {
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - r);
+  ctx.quadraticCurveTo(cx, cy, cx + r, cy);
+  ctx.quadraticCurveTo(cx, cy, cx, cy + r);
+  ctx.quadraticCurveTo(cx, cy, cx - r, cy);
+  ctx.quadraticCurveTo(cx, cy, cx, cy - r);
+  ctx.closePath();
+  ctx.fill();
+}
+
+/* PNG 1080x1920 transparente con el título del collage centrado
+ * (3 líneas, blanco con sombra suave) y dos estrellitas, en las
+ * mismas posiciones relativas que el reel de referencia. */
+async function makeCollageTitlePNG(lines) {
+  const useBaloo = await loadBalooForCanvas();
+  const fam = useBaloo ? '"Baloo 2"' : '"Titan One"';
+  const c = document.createElement('canvas'); c.width = 1080; c.height = 1920;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, 1080, 1920);
+  // Tamaño: que la línea más larga quepa en 900 px.
+  let px = useBaloo ? 118 : 96;
+  const setF = (p) => { ctx.font = `800 ${p}px ${fam}, sans-serif`; };
+  setF(px);
+  const lineW = () => Math.max(...lines.map((l) => ctx.measureText(l).width));
+  while (px > 40 && lineW() > 900) { px -= 4; setF(px); }
+  const gap = Math.round(px * 1.28);
+  const cy = 1020; // centro del bloque, como en el reel
+  const y0 = cy - ((lines.length - 1) * gap) / 2;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fff';
+  ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 4;
+  lines.forEach((l, i) => ctx.fillText(l, 540, y0 + i * gap));
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  // Estrellitas blancas arriba a la izquierda y abajo a la derecha.
+  ctx.fillStyle = '#fff';
+  drawStar(ctx, 281, 806, 34);
+  drawStar(ctx, 694, 1200, 26);
   return await new Promise((res) => c.toBlob(res, 'image/png'));
 }
 
@@ -789,6 +905,7 @@ async function processSlotPhoto(file, name, out, dur) {
 
 async function exportPlantilla() {
   const tpl = state.template;
+  if (tpl.tipo === 'collage') return exportCollage();
   for (let i = 0; i < tpl.clips.length; i++) {
     if (!state.slots[i]) throw new Error(`Falta el lugar ${i + 1} (${tpl.clips[i].ejemplo || 'clip'}). Toca su botón y elige un video o una foto.`);
   }
@@ -846,6 +963,100 @@ async function exportPlantilla() {
     const data = await ffmpeg.readFile('plantilla.mp4');
     await ffmpeg.writeFile('salida.mp4', data);
   }
+  return 'salida.mp4';
+}
+
+/* ---------------- exportar: modo plantilla (collage Libros leídos) ---------------- */
+/* Rejilla de portadas sobre una foto de fondo (o fondo crema si no hay
+ * foto), con el título en el centro. Las portadas entran en espiral
+ * (orden de los lugares), cada una con un zoom de 1,18 a 1 en 0,25 s,
+ * una cada 0,19 s, como el reel de referencia; la última entra a los
+ * 5,6 s y el video dura 6,4 s. Todo en un solo pase de ffmpeg: un
+ * zoompan por portada para el pop y un overlay con su hora de entrada.
+ * Las portadas son fotos; si un lugar trae video, se avisa. */
+async function exportCollage() {
+  const tpl = state.template;
+  const DUR = tpl.duracion_segundos || 6.4;
+  const cols = tpl.columnas || 5, rows = tpl.filas || 6;
+  const cw = Math.round(1080 / cols), ch = Math.round(1920 / rows);
+  const chFoto = Math.round(cw * 3 / 2); // las portadas son 2:3
+  const filled = state.slots.map((f, i) => (f ? i : -1)).filter((i) => i >= 0);
+  if (!filled.length) throw new Error('Pon al menos una portada. Toca "Elegir varias portadas" y elige las fotos.');
+  for (const i of filled) {
+    if (!isImageFile(state.slots[i])) throw new Error(`La portada ${i + 1} es un video; las portadas tienen que ser fotos.`);
+  }
+  stepTotal = 4; stepIdx = 0;
+
+  let musicName = null;
+  if (state.musicFile) {
+    musicName = 'musica' + extOf(state.musicFile, '.mp3');
+    await ffmpeg.writeFile(musicName, new Uint8Array(await state.musicFile.arrayBuffer()));
+  }
+
+  setStep('Preparando el fondo…');
+  const args = [];
+  let bgName = null;
+  if (state.fondoFile) {
+    bgName = 'fondo' + extOf(state.fondoFile, '.jpg');
+    await ffmpeg.writeFile(bgName, new Uint8Array(await state.fondoFile.arrayBuffer()));
+    args.push('-framerate', '30', '-loop', '1', '-t', String(DUR), '-i', bgName);
+  } else {
+    args.push('-f', 'lavfi', '-i', `color=c=0xEFE9DD:s=1080x1920:d=${DUR}`);
+  }
+
+  setStep('Preparando el título…');
+  const lines = (ui.tituloLibros.value || '').split('\n').map((s) => s.trim()).filter(Boolean).slice(0, 3);
+  const titlePng = await makeCollageTitlePNG(lines.length ? lines : (tpl.titulo_lineas || ['Todo lo que he leído']));
+  await ffmpeg.writeFile('titulo.png', new Uint8Array(await titlePng.arrayBuffer()));
+
+  const order = spiralOrder(cols, rows);
+  const stagger = 5.6 / 29; // mismo ritmo que el reel: última portada a los 5,6 s
+  const written = [];
+  for (const slotIdx of filled) {
+    const name = `portada${slotIdx}` + extOf(state.slots[slotIdx], '.jpg');
+    await ffmpeg.writeFile(name, new Uint8Array(await state.slots[slotIdx].arrayBuffer()));
+    written.push(name);
+    args.push('-framerate', '30', '-loop', '1', '-t', String(DUR), '-i', name);
+  }
+  const titleIdx = 1 + filled.length;
+  args.push('-framerate', '30', '-loop', '1', '-t', String(DUR), '-i', 'titulo.png');
+
+  const fc = [];
+  if (bgName) fc.push(`[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30,format=yuv420p[base]`);
+  else fc.push('[0:v]fps=30,format=yuv420p,setsar=1[base]');
+  let prev = 'base';
+  filled.forEach((slotIdx, k) => {
+    const [col, row] = order[slotIdx];
+    const x = col * cw, y = row * ch;
+    const s = (k * stagger).toFixed(3);
+    const z = `min(1.18,max(1,if(lt(time-${s},0.25),1.18-0.18*(time-${s})/0.25,1)))`;
+    fc.push(`[${1 + k}:v]scale=${cw}:${chFoto}:force_original_aspect_ratio=increase,crop=${cw}:${ch},setsar=1,zoompan=z='${z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${cw}x${ch}:fps=30,format=yuva420p[ov${k}]`);
+    fc.push(`[${prev}][ov${k}]overlay=x=${x}:y=${y}:enable='between(t,${s},${DUR})'[b${k + 1}]`);
+    prev = `b${k + 1}`;
+  });
+  fc.push(`[${prev}][${titleIdx}:v]overlay=0:0:enable='between(t,0,${DUR})'[vout]`);
+
+  setStep('Armando el collage…');
+  await runFFmpeg([...args, '-filter_complex', fc.join(';'), '-map', '[vout]',
+    '-r', '30', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
+    '-movflags', '+faststart', 'collage.mp4']);
+  state.workDuration = DUR;
+
+  if (musicName) {
+    setStep('Añadiendo la música…');
+    await runFFmpeg(['-i', 'collage.mp4', '-i', musicName, '-filter_complex',
+      `[1:a]volume=${musicVolumeSolo()},aloop=loop=-1:size=2e+09,atrim=0:${DUR.toFixed(2)}[aout]`,
+      '-map', '0:v', '-map', '[aout]',
+      '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+      '-movflags', '+faststart', 'salida.mp4']);
+  } else {
+    const data = await ffmpeg.readFile('collage.mp4');
+    await ffmpeg.writeFile('salida.mp4', data);
+  }
+  if (bgName) await rmQuiet(bgName);
+  for (const n of written) await rmQuiet(n);
+  await rmQuiet('titulo.png');
+  await rmQuiet('collage.mp4');
   return 'salida.mp4';
 }
 
@@ -914,7 +1125,33 @@ function updatePreview() {
   if (hasVideo) v.playbackRate = state.speed;
   // Texto burbuja (mismo tamaño y posición que al exportar).
   const wrap = ui.previewWrap;
-  const scale = wrap.clientWidth / 1080 || 0.3;
+  // v11: el video se recorta en alto (max-height:52vh), así que el video
+  // mostrado es más angosto que el contenedor. La escala y las capas de
+  // texto se miden sobre el video real, no sobre el contenedor: con la
+  // escala del contenedor las letras salían demasiado grandes y las
+  // líneas se amontonaban (el espacio entre líneas quedaba menor que el
+  // tamaño de la letra). Sin video, se usa el contenedor como antes.
+  let scale = wrap.clientWidth / 1080 || 0.3;
+  let vidW = wrap.clientWidth, vidH = wrap.clientHeight, offX = 0, offY = 0;
+  const vidMedido = hasVideo && v.videoWidth > 0 && v.clientWidth > 0 && v.clientHeight > 0;
+  if (vidMedido) {
+    vidW = v.clientWidth; vidH = v.clientHeight;
+    scale = Math.min(vidW / 1080, vidH / 1920);
+    const r = wrap.getBoundingClientRect(), vr = v.getBoundingClientRect();
+    offX = vr.left - r.left; offY = vr.top - r.top;
+  }
+  // Las capas de texto cubren solo el rectángulo del video, para que los
+  // porcentajes de arriba (y/1920) coincidan con la exportación.
+  [ui.pvBubble, ui.pvLyric].forEach((el) => {
+    if (vidMedido) {
+      el.style.left = offX + 'px'; el.style.top = offY + 'px';
+      el.style.width = vidW + 'px'; el.style.height = vidH + 'px';
+      el.style.right = 'auto'; el.style.bottom = 'auto';
+    } else {
+      el.style.left = ''; el.style.top = ''; el.style.width = ''; el.style.height = '';
+      el.style.right = ''; el.style.bottom = '';
+    }
+  });
   let html = '';
   if (hasVideo && state.effect === 'burbuja') {
     const lines = [$('burbuja-1').value, $('burbuja-2').value, $('burbuja-3').value].map((l) => l.trim()).filter(Boolean).slice(0, 3);
@@ -950,10 +1187,20 @@ function updatePreview() {
   } else {
     ui.pvLyric.innerHTML = '';
   }
-  // Subtítulos: una muestra de dónde saldrán.
+  // Subtítulos: una muestra de dónde saldrán, también dentro del video.
   const showSubs = hasVideo && ui.chkSubs.checked && state.effect !== 'irvenir' && state.mode === 'efecto';
   ui.pvSubs.classList.toggle('oculto', !showSubs);
-  if (showSubs) ui.pvSubs.style.fontSize = Math.round(28 * scale) + 'px';
+  if (showSubs) {
+    ui.pvSubs.style.fontSize = Math.round(28 * scale) + 'px';
+    if (vidMedido) {
+      const lado = Math.round(offX + vidW * 0.08);
+      ui.pvSubs.style.left = lado + 'px';
+      ui.pvSubs.style.right = lado + 'px';
+      ui.pvSubs.style.bottom = Math.round(wrap.clientHeight - offY - vidH + vidH * 0.13) + 'px';
+    } else {
+      ui.pvSubs.style.left = ''; ui.pvSubs.style.right = ''; ui.pvSubs.style.bottom = '';
+    }
+  }
   // Ir y venir no se puede previsualizar en vivo: avisar.
   ui.pvNote.classList.toggle('oculto', !(hasVideo && state.effect === 'irvenir'));
 }
@@ -961,23 +1208,105 @@ function updatePreview() {
 /* ---------------- interfaz ---------------- */
 function refreshExportButton() {
   if (state.mode === 'plantilla') {
-    ui.btnExportar.disabled = !state.template.clips.every((_, i) => state.slots[i]);
+    if (state.template.tipo === 'collage') {
+      // El collage se puede exportar con desde 1 portada; no hace falta llenar los 30 lugares.
+      ui.btnExportar.disabled = !state.slots.some(Boolean);
+    } else {
+      ui.btnExportar.disabled = !state.template.clips.every((_, i) => state.slots[i]);
+    }
   } else {
     ui.btnExportar.disabled = !state.mainFile;
   }
+}
+
+/* Pinta la fila de un lugar (nombre del archivo y miniatura) según state.slots[i]. */
+function paintSlot(div, i) {
+  const f = state.slots[i];
+  const info = div.querySelector(`#slot-info-${i}`);
+  const img = div.querySelector(`#slot-img-${i}`);
+  const vid = div.querySelector(`#slot-vid-${i}`);
+  const label = div.querySelector('label.filebtn');
+  if (!f) {
+    info.textContent = 'Sin archivo todavía.';
+    if (img) { img.removeAttribute('src'); img.style.display = 'none'; }
+    if (vid) { vid.removeAttribute('src'); vid.style.display = 'none'; }
+    if (label) label.classList.remove('sel');
+    return;
+  }
+  info.textContent = `${f.name} (${(f.size / 1048576).toFixed(1)} MB)`;
+  const url = URL.createObjectURL(f);
+  if (isImageFile(f)) {
+    if (img) { img.src = url; img.style.display = 'block'; }
+    if (vid) vid.style.display = 'none';
+  } else {
+    if (vid) { vid.src = url; vid.style.display = 'block'; vid.play().catch(() => {}); }
+    if (img) img.style.display = 'none';
+  }
+  if (label) label.classList.add('sel');
+}
+
+/* Mini vista previa del collage: rejilla 5x6 con las portadas puestas y
+ * el título en el centro, igual que quedará el video. */
+let collageThumbURLs = [];
+function updateCollagePreview() {
+  if (!ui.collagePreview) return;
+  for (const u of collageThumbURLs) URL.revokeObjectURL(u);
+  collageThumbURLs = [];
+  const tpl = state.template;
+  if (tpl.tipo !== 'collage') { ui.collagePreview.innerHTML = ''; return; }
+  const cols = tpl.columnas || 5, rows = tpl.filas || 6;
+  const order = spiralOrder(cols, rows);
+  const grid = document.createElement('div');
+  grid.className = 'collage-grid';
+  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  // Las celdas van en orden de rejilla (fila por fila); cada portada se
+  // coloca en su celda según el orden de la espiral.
+  const byCell = new Map();
+  state.slots.forEach((f, i) => { if (f) byCell.set(order[i].join(','), f); });
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'collage-cell';
+      const f = byCell.get([c, r].join(','));
+      if (f) {
+        const img = document.createElement('img');
+        const url = URL.createObjectURL(f);
+        collageThumbURLs.push(url);
+        img.src = url;
+        img.alt = '';
+        cell.appendChild(img);
+      }
+      grid.appendChild(cell);
+    }
+  }
+  const title = document.createElement('div');
+  title.className = 'collage-title';
+  const lines = (ui.tituloLibros.value || '').split('\n').map((s) => s.trim()).filter(Boolean);
+  title.textContent = (lines.length ? lines : (tpl.titulo_lineas || [])).join(' ');
+  grid.appendChild(title);
+  ui.collagePreview.innerHTML = '';
+  ui.collagePreview.appendChild(grid);
 }
 
 function buildSlots() {
   const tpl = state.template;
   ui.slots.innerHTML = '';
   state.slots = tpl.clips.map(() => null);
+  const isCollage = tpl.tipo === 'collage';
   tpl.clips.forEach((clip, i) => {
     const div = document.createElement('div');
     div.className = 'slot';
-    div.innerHTML = `<div class="t">Lugar ${clip.lugar} · ${fmtSeg(clip.duracion_segundos)}</div>
+    const accept = isCollage ? 'image/*' : 'video/*,image/*';
+    div.innerHTML = isCollage
+      ? `<div class="t">Portada ${clip.lugar}</div>
+      <label class="filebtn mini" for="slot-${i}">📁 Elegir foto</label>
+      <input type="file" id="slot-${i}" accept="${accept}">
+      <div class="d" id="slot-info-${i}">Sin archivo todavía.</div>
+      <img id="slot-img-${i}" alt="">`
+      : `<div class="t">Lugar ${clip.lugar} · ${fmtSeg(clip.duracion_segundos)}</div>
       <div class="d">Ejemplo: ${clip.ejemplo || 'tu clip'}</div>
       <label class="filebtn" for="slot-${i}">📁 Elegir video o foto</label>
-      <input type="file" id="slot-${i}" accept="video/*,image/*">
+      <input type="file" id="slot-${i}" accept="${accept}">
       <div class="d" id="slot-info-${i}">Sin archivo todavía.</div>
       <img id="slot-img-${i}" alt="">
       <video id="slot-vid-${i}" playsinline muted loop></video>`;
@@ -986,21 +1315,32 @@ function buildSlots() {
       const f = ev.target.files[0];
       if (!f) return;
       state.slots[i] = f;
-      const info = div.querySelector(`#slot-info-${i}`);
-      info.textContent = `${f.name} (${(f.size / 1048576).toFixed(1)} MB)`;
-      const url = URL.createObjectURL(f);
-      if (isImageFile(f)) {
-        const img = div.querySelector(`#slot-img-${i}`);
-        img.src = url; img.style.display = 'block';
-      } else {
-        const v = div.querySelector(`#slot-vid-${i}`);
-        v.src = url; v.style.display = 'block'; v.play().catch(() => {});
-      }
-      div.querySelector('label.filebtn').classList.add('sel');
+      paintSlot(div, i);
+      updateCollagePreview();
       refreshExportButton();
     });
   });
   refreshExportButton();
+}
+
+/* Cambia la plantilla integrada (Ren / Libros leídos) y rearma el panel. */
+function setTemplate(tpl) {
+  state.template = tpl;
+  state.fondoFile = null;
+  if (ui.fondoInput) ui.fondoInput.value = '';
+  if (ui.fondoInfo) ui.fondoInfo.textContent = 'Sin foto: fondo color crema.';
+  if (ui.tituloLibros && tpl.titulo_lineas) ui.tituloLibros.value = tpl.titulo_lineas.join('\n');
+  const isCollage = tpl.tipo === 'collage';
+  if (ui.collageTools) ui.collageTools.classList.toggle('oculto', !isCollage);
+  if (ui.cierreTools) ui.cierreTools.classList.toggle('oculto', isCollage);
+  if (ui.tplDesc) {
+    ui.tplDesc.textContent = isCollage
+      ? `${tpl.clips.length} lugares para portadas (5,6 s de oleadas) con título en el centro. Total: ${tpl.duracion_segundos || 6.4} segundos. Cada lugar acepta una foto; puedes poner desde 1 hasta ${tpl.clips.length} portadas.`
+      : '4 lugares para clips (5 s, 4.4 s, 4 s y 5 s) con efecto ir y venir y tono cine, y tarjeta final negra de 3.5 s. Total: 21.9 segundos. Cada lugar acepta video o foto (las fotos se acercan poco a poco).';
+  }
+  document.querySelectorAll('#tpl-switch button').forEach((b) => b.classList.toggle('on', b.dataset.tpl === (isCollage ? 'libros' : 'ren')));
+  buildSlots();
+  updateCollagePreview();
 }
 
 /* Abre un panel de la barra de herramientas. "Plantilla" cambia el modo;
@@ -1039,6 +1379,31 @@ function wireSeg(id, key, cb) {
 /* ---------------- arranque ---------------- */
 document.querySelectorAll('#toolbar button').forEach((b) => b.addEventListener('click', () => openPanel(b.dataset.panel)));
 document.querySelectorAll('#efectos button').forEach((b) => b.addEventListener('click', () => setEffect(b.dataset.efecto)));
+document.querySelectorAll('#tpl-switch button').forEach((b) => b.addEventListener('click', () => setTemplate(b.dataset.tpl === 'libros' ? TEMPLATE_LIBROS : TEMPLATE_REN)));
+ui.tituloLibros.addEventListener('input', updateCollagePreview);
+ui.fondoInput.addEventListener('change', (ev) => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  state.fondoFile = f;
+  ui.fondoInfo.textContent = `Fondo: ${f.name}`;
+});
+/* Elegir varias portadas a la vez: se llenan los lugares vacíos en orden. */
+ui.portadasInput.addEventListener('change', (ev) => {
+  const files = [...(ev.target.files || [])].filter(isImageFile);
+  if (!files.length) return;
+  let next = 0;
+  for (const f of files) {
+    while (next < state.slots.length && state.slots[next]) next++;
+    if (next >= state.slots.length) break;
+    state.slots[next] = f;
+    const div = ui.slots.children[next];
+    if (div) paintSlot(div, next);
+    next++;
+  }
+  ev.target.value = '';
+  updateCollagePreview();
+  refreshExportButton();
+});
 wireSeg('texto-tam', 'tam', (v) => { state.textSize = v; updatePreview(); });
 wireSeg('texto-pos', 'pos', (v) => { state.textPos = v; updatePreview(); });
 wireSeg('musica-vol', 'vol', (v) => { state.musicVol = v; });
@@ -1049,6 +1414,9 @@ wireSeg('velocidad', 'vel', (v) => { state.speed = parseFloat(v); updatePreview(
 ui.chkSubs.addEventListener('change', updatePreview);
 ui.btnRecargar.addEventListener('click', () => location.reload());
 window.addEventListener('resize', updatePreview);
+// Al cargar los metadatos el video ya tiene su tamaño real (antes puede
+// medir 150 px de alto por defecto) y hay que volver a medir la vista previa.
+ui.preview.addEventListener('loadedmetadata', updatePreview);
 
 ui.videoInput.addEventListener('change', async (ev) => {
   const f = ev.target.files[0];
@@ -1091,14 +1459,19 @@ ui.tplInput.addEventListener('change', async (ev) => {
   if (!f) return;
   try {
     const tpl = JSON.parse(await f.text());
-    if (!Array.isArray(tpl.clips) || !tpl.cierre) throw new Error('Ese archivo no es una plantilla válida.');
-    tpl.clips.forEach((c) => { if (typeof c.duracion_segundos !== 'number') throw new Error('Falta la duración en un lugar de la plantilla.'); });
-    state.template = tpl;
-    ui.cierre1.value = tpl.cierre.texto_principal || '';
-    ui.cierre2.value = tpl.cierre.texto_secundario || '';
-    ui.cierre3.value = tpl.cierre.texto_final || '';
+    if (!Array.isArray(tpl.clips)) throw new Error('Ese archivo no es una plantilla válida.');
+    if (tpl.tipo === 'collage') {
+      // El collage no tiene tarjeta final ni duración por lugar.
+      if (tpl.titulo_lineas) ui.tituloLibros.value = tpl.titulo_lineas.join('\n');
+    } else {
+      if (!tpl.cierre) throw new Error('Ese archivo no es una plantilla válida.');
+      tpl.clips.forEach((c) => { if (typeof c.duracion_segundos !== 'number') throw new Error('Falta la duración en un lugar de la plantilla.'); });
+      ui.cierre1.value = tpl.cierre.texto_principal || '';
+      ui.cierre2.value = tpl.cierre.texto_secundario || '';
+      ui.cierre3.value = tpl.cierre.texto_final || '';
+    }
+    setTemplate(tpl);
     ui.tplInfo.textContent = `Plantilla cargada: ${tpl.nombre || 'sin nombre'} (${tpl.clips.length} lugares).`;
-    buildSlots();
   } catch (e) {
     ui.tplInfo.textContent = 'No se pudo cargar esa plantilla: ' + e.message;
   }
@@ -1129,7 +1502,11 @@ ui.btnOtro.addEventListener('click', () => {
   ui.videoInfo.textContent = 'Sin video todavía.';
   ui.btnMusica.classList.remove('sel'); ui.btnMusica.textContent = 'Elegir música de fondo';
   ui.musicaInfo.textContent = 'Se mezcla bajita para no tapar tu voz. Si la canción es más corta que el video, se repite.';
+  state.fondoFile = null;
+  if (ui.fondoInput) ui.fondoInput.value = '';
+  if (ui.fondoInfo) ui.fondoInfo.textContent = 'Sin foto: fondo color crema.';
   buildSlots();
+  updateCollagePreview();
   openPanel('efectos');
   updatePreview();
   ui.previewZone.classList.remove('no-sticky');

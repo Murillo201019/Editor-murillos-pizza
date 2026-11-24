@@ -94,6 +94,13 @@
   .slot .d{ font-size:12px; color:var(--muted); }
   .slot label.filebtn{ padding:10px 14px; font-size:14px; margin:8px 0 0; }
   .slot img, .slot video{ width:100%; border-radius:8px; margin-top:8px; display:none; }
+  /* Mini vista previa del collage "Libros leídos": rejilla 5x6 con el título encima. */
+  .collage-grid{ position:relative; display:grid; gap:2px; background:#EFE9DD; border-radius:12px; overflow:hidden; aspect-ratio:9/16; max-width:220px; margin:10px auto; }
+  .collage-cell{ background:transparent; position:relative; overflow:hidden; }
+  .collage-cell img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  .collage-title{ position:absolute; left:8%; right:8%; top:50%; transform:translateY(-50%); text-align:center; color:#fff; font-weight:800; font-size:15px; line-height:1.25; text-shadow:0 2px 6px rgba(0,0,0,.55); pointer-events:none; }
+  textarea{ width:100%; padding:11px; font-size:15px; border:1px solid var(--borde); border-radius:10px; margin:5px 0; background:#111; color:#fff; font-family:inherit; resize:vertical; }
+  textarea:focus{ border-color:var(--amarillo); outline:none; }
   /* Barra de herramientas inferior estilo CapCut: las 7 caben sin desplazar. */
   #toolbar{ position:fixed; left:0; right:0; bottom:0; z-index:30; background:#000; border-top:1px solid #222; display:flex; overflow-x:auto; padding:6px 4px calc(8px + env(safe-area-inset-bottom)); scrollbar-width:none; }
   #toolbar::-webkit-scrollbar{ display:none; }
@@ -266,16 +273,36 @@
 
     <div id="panel-plantilla" class="card panel oculto">
       <h3>🎬 Plantilla <small>Varios clips en un solo video</small></h3>
-      <strong>Plantilla: Estilo Ren Director</strong>
-      <p class="hint">4 lugares para clips (5 s, 4.4 s, 4 s y 5 s) con efecto ir y venir y tono cine, y tarjeta final negra de 3.5 s. Total: 21.9 segundos. Cada lugar acepta video o foto (las fotos se acercan poco a poco).</p>
+      <div class="seg" id="tpl-switch">
+        <button type="button" data-tpl="ren" class="on">Estilo Ren Director</button>
+        <button type="button" data-tpl="libros">Libros leídos</button>
+      </div>
+      <p class="hint" id="tpl-desc">4 lugares para clips (5 s, 4.4 s, 4 s y 5 s) con efecto ir y venir y tono cine, y tarjeta final negra de 3.5 s. Total: 21.9 segundos. Cada lugar acepta video o foto (las fotos se acercan poco a poco).</p>
+      <div id="collage-tools" class="oculto">
+        <div class="seg-label">Título del centro (3 líneas)</div>
+        <textarea id="titulo-libros" rows="3" maxlength="90">Todo lo que he leído
+(hasta ahora)
+este año</textarea>
+        <div class="seg-label">Foto de fondo (opcional)</div>
+        <label class="filebtn mini" for="fondoInput">📁 Elegir foto de fondo</label>
+        <input type="file" id="fondoInput" accept="image/*">
+        <div class="d" id="fondo-info">Sin foto: fondo color crema.</div>
+        <div class="seg-label">Portadas</div>
+        <label class="filebtn" for="portadasInput">📚 Elegir varias portadas a la vez</label>
+        <input type="file" id="portadasInput" accept="image/*" multiple>
+        <p class="hint">Se llenan en orden: la primera va arriba a la izquierda y las demás siguen en espiral hasta el centro. Puedes poner desde 1 hasta 30 portadas.</p>
+        <div id="collage-preview"></div>
+      </div>
       <div id="slots"></div>
       <label class="filebtn" for="tplInput">Cargar otra plantilla (archivo .json)</label>
       <input type="file" id="tplInput" accept=".json,application/json">
       <p class="hint" id="tpl-info"></p>
-      <div class="seg-label">Tarjeta final</div>
-      <input type="text" id="cierre-1" maxlength="30" value="MURILLO'S PIZZA">
-      <input type="text" id="cierre-2" maxlength="30" value="MÉRIDA 2026">
-      <input type="text" id="cierre-3" maxlength="40" value="Pide por WhatsApp 999 990 2960">
+      <div id="cierre-tools">
+        <div class="seg-label">Tarjeta final</div>
+        <input type="text" id="cierre-1" maxlength="30" value="MURILLO'S PIZZA">
+        <input type="text" id="cierre-2" maxlength="30" value="MÉRIDA 2026">
+        <input type="text" id="cierre-3" maxlength="40" value="Pide por WhatsApp 999 990 2960">
+      </div>
     </div>
   </div>
 
